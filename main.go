@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image/color"
 	"os"
+	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -11,6 +12,7 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/widget"
 	"github.com/faiface/beep"
@@ -73,6 +75,42 @@ func tidyUp() {
 	fmt.Println("Exited")
 }
 
+// isImageFile checks if the file has an image extension
+func isImageFile(filename string) bool {
+	extensions := []string{".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".webp"}
+	for _, ext := range extensions {
+		if strings.HasSuffix(strings.ToLower(filename), ext) {
+			return true
+		}
+	}
+	return false
+}
+
+func findImage() (string, error) {
+	dir, err := os.Getwd()
+	imageName := ""
+	if err != nil {
+		fmt.Println("Error getting current directory:", err)
+		return "", err
+	}
+
+	// Read files in the directory
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		fmt.Println("Error reading directory:", err)
+		return "", err
+	}
+
+	// Loop through files and find images
+	for _, file := range files {
+		if !file.IsDir() && isImageFile(file.Name()) {
+			fmt.Println("Found image:", file.Name())
+			imageName = file.Name()
+		}
+	}
+	return imageName, err
+}
+
 var (
 	ap            *audioPanel // Audio panel for controlling playback
 	currentFileURI fyne.URI   // Save current file location
@@ -99,6 +137,19 @@ func main() {
 
 	forwardBtn := widget.NewButton("Skip forward", nil)
 	backwardBtn := widget.NewButton("Skip backward", nil)
+
+	gridPlayControls := container.New(layout.NewGridLayout(2), playBtn, pauseBtn)
+	gridVolumeControls := container.New(layout.NewGridLayout(2), volumeIncBtn, volumeDecBtn)
+	gridSpeedControls := container.New(layout.NewGridLayout(2), speedIncBtn, speedDecBtn)
+	gridSkipControls := container.New(layout.NewGridLayout(2), forwardBtn, backwardBtn)
+
+	imageName, err := findImage()
+	if err != nil {
+		fmt.Println("Error reading directory:", err)
+	}
+	fmt.Println(imageName)
+	image := canvas.NewImageFromURI(storage.NewFileURI(imageName))
+	image.FillMode = canvas.ImageFillOriginal
 
 	// Disable buttons initially
 	playBtn.Disable()
@@ -138,6 +189,8 @@ func main() {
 			uri := reader.URI()
 			currentFileURI = uri
 			label.SetText("Selected: " + uri.Name())
+			fmt.Println(uri)
+			image = canvas.NewImageFromURI(uri)
 
 			// Load and play the MP3 file
 			file, err := os.Open(reader.URI().Path())
@@ -250,7 +303,8 @@ func main() {
 	w.SetContent(container.NewVBox(
 		btn,
 		label,
-		container.NewHBox(playBtn, pauseBtn, line, volumeDecBtn, volumeIncBtn, speedDecBtn, speedIncBtn, forwardBtn, backwardBtn),
+		image,
+		gridPlayControls, gridVolumeControls, gridSpeedControls, gridSkipControls,
 	))
 
 	// Save data when closed
