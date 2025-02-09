@@ -13,6 +13,7 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/storage"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/faiface/beep"
 	"github.com/faiface/beep/effects"
@@ -112,11 +113,12 @@ func (ts *trackedStreamer) Position() int {
 func main() {
 	a := app.NewWithID("com.example.audiobookplayer")
 	w := a.NewWindow("Audiobook player")
-	w.Resize(fyne.NewSize(800, 800))
+	w.Resize(fyne.NewSize(600, 700))
+	w.SetFixedSize(true)
 
 	label := widget.NewLabel("Select an MP3 file...")
-	playBtn := widget.NewButton("Play", nil)
-	pauseBtn := widget.NewButton("Pause", nil)
+	playBtn := widget.NewButtonWithIcon("", theme.MediaPlayIcon(), nil)
+	pauseBtn := widget.NewButtonWithIcon("", theme.MediaPauseIcon(), nil)
 
 	line := canvas.NewLine(color.White)
 	line.StrokeWidth = 5
@@ -124,16 +126,14 @@ func main() {
 	speedIncBtn := widget.NewButton("Increase speed", nil)
 	speedDecBtn := widget.NewButton("Decrease speed", nil)
 
-	volumeIncBtn := widget.NewButton("Increase volume", nil)
-	volumeDecBtn := widget.NewButton("Decrease volume", nil)
+	volumeIncBtn := widget.NewButtonWithIcon("",theme.VolumeUpIcon(), nil)
+	volumeDecBtn := widget.NewButtonWithIcon("",theme.VolumeDownIcon(), nil)
 
-	forwardBtn := widget.NewButton("Skip forward", nil)
-	backwardBtn := widget.NewButton("Skip backward", nil)
+	forwardBtn := widget.NewButtonWithIcon("",theme.MediaFastForwardIcon(), nil)
+	backwardBtn := widget.NewButtonWithIcon("", theme.MediaFastRewindIcon(), nil)
 
-	gridPlayControls := container.New(layout.NewGridLayout(2), playBtn, pauseBtn)
-	gridVolumeControls := container.New(layout.NewGridLayout(2), volumeIncBtn, volumeDecBtn)
-	gridSpeedControls := container.New(layout.NewGridLayout(2), speedIncBtn, speedDecBtn)
-	gridSkipControls := container.New(layout.NewGridLayout(2), forwardBtn, backwardBtn)
+	gridPlayControls := container.New(layout.NewGridLayout(6), volumeDecBtn, backwardBtn, playBtn, pauseBtn, forwardBtn, volumeIncBtn)
+	gridSpeedControls := container.New(layout.NewGridLayout(2), speedDecBtn, speedIncBtn)
 
 	// Display Audiobook image
 	imageName, err := helper.FindImage()
@@ -343,19 +343,18 @@ func main() {
 		}
 	}
 
-	// Add progress bar and time labels to the UI
-	progressContainer := container.NewHBox(
-		currentTimeLabel,
-		progressBar,
-		totalTimeLabel,
-	)
+	timeContent := container.New(layout.NewBorderLayout(nil, nil, currentTimeLabel, totalTimeLabel), currentTimeLabel, totalTimeLabel)
+
+	// Center the progress container
+	centeredProgressContainer := container.NewCenter(container.NewGridWrap(fyne.NewSize(600, 20), progressBar))
 
 	w.SetContent(container.NewVBox(
 		btn,
 		label,
 		image,
-		progressContainer,
-		gridPlayControls, gridVolumeControls, gridSpeedControls, gridSkipControls,
+		centeredProgressContainer,
+		timeContent,
+		gridPlayControls, gridSpeedControls,
 	))
 
 	// Save data when closed
