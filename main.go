@@ -74,9 +74,10 @@ func tidyUp() {
 }
 
 var (
-	ap      *audioPanel // Audio panel for controlling playback
-	currentFileURI fyne.URI // Save current file location
+	ap            *audioPanel // Audio panel for controlling playback
+	currentFileURI fyne.URI   // Save current file location
 )
+
 func main() {
 	// Use a unique ID for the app
 	a := app.NewWithID("com.example.audiobookplayer")
@@ -133,7 +134,7 @@ func main() {
 				return
 			}
 			defer reader.Close()
-			
+
 			uri := reader.URI()
 			currentFileURI = uri
 			label.SetText("Selected: " + uri.Name())
@@ -169,79 +170,6 @@ func main() {
 		// Show the file dialog
 		fileDialog.Show()
 	})
-
-		// After setting up UI elements but before w.ShowAndRun()
-	prefs := a.Preferences()
-	savedURIStr := prefs.String("lastFile")
-	savedPosition := prefs.Float("lastPosition")
-	wasPlaying := prefs.Bool("wasPlaying")
-
-	if savedURIStr != "" && savedPosition > 0 {
-		uri, err := storage.ParseURI(savedURIStr)
-		if err != nil {
-			fmt.Println("Error parsing saved URI:", err)
-		} else {
-			filePath := uri.Path()
-			if _, err := os.Stat(filePath); os.IsNotExist(err) {
-				prefs.SetString("lastFile", "")
-				prefs.SetFloat("lastPosition", 0)
-				prefs.SetBool("wasPlaying", false)
-			} else {
-				resumeDialog := dialog.NewConfirm("Resume Playback", "Resume playback from "+uri.Name()+"?", func(resume bool) {
-					if !resume {
-						prefs.SetString("lastFile", "")
-						prefs.SetFloat("lastPosition", 0)
-						prefs.SetBool("wasPlaying", false)
-						return
-					}
-					file, err := os.Open(filePath)
-					if err != nil {
-						dialog.ShowError(err, w)
-						return
-					}
-					streamer, format, err := mp3.Decode(file)
-					if err != nil {
-						dialog.ShowError(err, w)
-						return
-					}
-					speaker.Init(format.SampleRate, format.SampleRate.N(time.Second/10))
-					ap = newAudioPanel(format.SampleRate, streamer)
-					
-					samples := int(float64(format.SampleRate) * savedPosition)
-					if samples < 0 {
-						samples = 0
-					} else if samples >= streamer.Len() {
-						samples = streamer.Len() - 1
-					}
-					if err := ap.streamer.Seek(samples); err != nil {
-						dialog.ShowError(fmt.Errorf("failed to seek to position: %v", err), w)
-						return
-					}
-					
-					currentFileURI = uri
-					label.SetText("Resumed: " + uri.Name())
-					
-					if wasPlaying {
-						ap.play()
-						playBtn.Disable()
-						pauseBtn.Enable()
-						speedIncBtn.Enable()
-						speedDecBtn.Enable()
-						volumeDecBtn.Enable()
-						volumeIncBtn.Enable()
-						forwardBtn.Enable()
-						backwardBtn.Enable()
-					} else {
-						playBtn.Enable()
-						pauseBtn.Disable()
-					}
-				}, w)
-				resumeDialog.SetConfirmText("Resume")
-				resumeDialog.SetDismissText("Start Over")
-				resumeDialog.Show()
-			}
-		}
-	}
 
 	// Play button action
 	playBtn.OnTapped = func() {
@@ -325,19 +253,99 @@ func main() {
 		container.NewHBox(playBtn, pauseBtn, line, volumeDecBtn, volumeIncBtn, speedDecBtn, speedIncBtn, forwardBtn, backwardBtn),
 	))
 
-	w.ShowAndRun()
-
 	// Save data when closed
 	w.SetOnClosed(func() {
-    if ap != nil && ap.streamer != nil && currentFileURI != nil {
-        prefs := a.Preferences()
-        currentPos := ap.streamer.Position()
-        positionInSeconds := float64(currentPos) / float64(ap.sampleRate)
-        isPlaying := !ap.ctrl.Paused
-        
-        prefs.SetString("lastFile", currentFileURI.String())
-        prefs.SetFloat("lastPosition", positionInSeconds)
-        prefs.SetBool("wasPlaying", isPlaying)
-    	}
+		if ap != nil && ap.streamer != nil && currentFileURI != nil {
+			prefs := a.Preferences()
+			currentPos := ap.streamer.Position()
+			positionInSeconds := float64(currentPos) / float64(ap.sampleRate)
+			isPlaying := !ap.ctrl.Paused
+
+			fmt.Printf("Saving preferences: file=%s, position=%.2f, playing=%v\n", currentFileURI.String(), positionInSeconds, isPlaying)
+
+			prefs.SetString("lastFile", currentFileURI.String())
+			prefs.SetFloat("lastPosition", positionInSeconds)
+			prefs.SetBool("wasPlaying", isPlaying)
+		}
 	})
+
+	// After setting up UI elements but before w.ShowAndRun()
+	prefs := a.Preferences()
+	savedURIStr := prefs.String("lastFile")
+	savedPosition := prefs.Float("lastPosition")
+	wasPlaying := prefs.Bool("wasPlaying")
+
+	fmt.Printf("Loading preferences: file=%s, position=%.2f, playing=%v\n", savedURIStr, savedPosition, wasPlaying)
+
+	if savedURIStr != "" && savedPosition > 0 {
+		uri, err := storage.ParseURI(savedURIStr)
+		if err != nil {
+			fmt.Println("Error parsing saved URI:", err)
+			prefs.SetString("lastFile", "") // Clear invalid URI
+		} else {
+			filePath := uri.Path()
+			if _, err := os.Stat(filePath); os.IsNotExist(err) {
+				fmt.Println("Saved file no longer exists:", filePath)
+				prefs.SetString("lastFile", "") // Clear invalid file
+				prefs.SetFloat("lastPosition", 0)
+				prefs.SetBool("wasPlaying", false)
+			} else {
+				resumeDialog := dialog.NewConfirm("Resume Playback", "Resume playback from "+uri.Name()+"?", func(resume bool) {
+					if !resume {
+						prefs.SetString("lastFile", "")
+						prefs.SetFloat("lastPosition", 0)
+						prefs.SetBool("wasPlaying", false)
+						return
+					}
+					file, err := os.Open(filePath)
+					if err != nil {
+						dialog.ShowError(err, w)
+						return
+					}
+					streamer, format, err := mp3.Decode(file)
+					if err != nil {
+						dialog.ShowError(err, w)
+						return
+					}
+					speaker.Init(format.SampleRate, format.SampleRate.N(time.Second/10))
+					ap = newAudioPanel(format.SampleRate, streamer)
+
+					samples := int(float64(format.SampleRate) * savedPosition)
+					if samples < 0 {
+						samples = 0
+					} else if samples >= streamer.Len() {
+						samples = streamer.Len() - 1
+					}
+					if err := ap.streamer.Seek(samples); err != nil {
+						dialog.ShowError(fmt.Errorf("failed to seek to position: %v", err), w)
+						return
+					}
+
+					currentFileURI = uri
+					label.SetText("Resumed: " + uri.Name())
+
+					if wasPlaying {
+						ap.play()
+						playBtn.Disable()
+						pauseBtn.Enable()
+						speedIncBtn.Enable()
+						speedDecBtn.Enable()
+						volumeDecBtn.Enable()
+						volumeIncBtn.Enable()
+						forwardBtn.Enable()
+						backwardBtn.Enable()
+					} else {
+						playBtn.Enable()
+						pauseBtn.Disable()
+					}
+				}, w)
+				resumeDialog.SetConfirmText("Resume")
+				resumeDialog.SetDismissText("Start Over")
+				resumeDialog.Show()
+			}
+		}
+	}
+
+	w.ShowAndRun()
+	tidyUp()
 }
