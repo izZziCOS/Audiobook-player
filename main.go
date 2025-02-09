@@ -110,6 +110,25 @@ func (ts *trackedStreamer) Position() int {
 	return ts.currentPos
 }
 
+// UpdateImage updates the image based on the selected MP3 file
+func updateImage(image *canvas.Image, uri fyne.URI) {
+	// Find an image file in the same directory as the MP3 file
+	imagePath, err := helper.FindImage(uri)
+	if err != nil {
+		fmt.Println("Error finding image:", err)
+		return
+	}
+
+	// Set the image source
+	if imagePath != "" {
+		image.File = imagePath
+		image.Refresh() // Refresh the image to display the new file
+	} else {
+		// If no image is found, use a placeholder or clear the image
+		image.File = ""
+		image.Refresh()
+	}
+}
 func main() {
 	a := app.NewWithID("com.example.audiobookplayer")
 	w := a.NewWindow("Audiobook player")
@@ -136,12 +155,10 @@ func main() {
 	gridSpeedControls := container.New(layout.NewGridLayout(2), speedDecBtn, speedIncBtn)
 
 	// Display Audiobook image
-	imageName, err := helper.FindImage()
-	if err != nil {
-		fmt.Println("Error reading directory:", err)
-	}
-	image := canvas.NewImageFromURI(storage.NewFileURI(imageName))
+	image := canvas.NewImageFromFile("") // Initially empty
 	image.FillMode = canvas.ImageFillOriginal
+	image.Resize(fyne.NewSize(500, 500))
+	image.Refresh() // Force the image to refresh
 
 	// Progress bar
 	progressBar := widget.NewProgressBar()
@@ -216,8 +233,9 @@ func main() {
 
 			uri := reader.URI()
 			currentFileURI = uri
+			label.TextStyle.Bold = true
 			label.SetText("Playing: " + uri.Name())
-			image = canvas.NewImageFromURI(uri)
+			updateImage(image, reader.URI())
 
 			// Load and play the MP3 file
 			file, err := os.Open(reader.URI().Path())
@@ -350,7 +368,7 @@ func main() {
 
 	w.SetContent(container.NewVBox(
 		btn,
-		label,
+		container.NewCenter(label),
 		image,
 		centeredProgressContainer,
 		timeContent,
@@ -425,8 +443,13 @@ func main() {
 						return
 					}
 
+					label.TextStyle.Bold = true
 					currentFileURI = uri
-					label.SetText("Resumed: " + uri.Name())
+					label.SetText(uri.Name())
+					
+					updateImage(image, uri)
+					image.Resize(fyne.NewSize(500, 500)) // Set the desired size
+                	image.Refresh() // Force the image to refresh
 
 					if wasPlaying {
 						ap.play()

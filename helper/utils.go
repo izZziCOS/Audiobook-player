@@ -3,7 +3,10 @@ package helper
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
+
+	"fyne.io/fyne/v2"
 )
 
 // formatTime converts seconds into a "hh:mm:ss" string
@@ -16,29 +19,28 @@ func FormatTime(seconds float64) string {
 	return fmt.Sprintf("%02d:%02d:%02d", hours, minutes, secondsRemaining)
 }
 
-func FindImage() (string, error) {
-	dir, err := os.Getwd()
-	imageName := ""
-	if err != nil {
-		fmt.Println("Error getting current directory:", err)
-		return "", err
-	}
+// FindImage searches for an image file in the same directory as the MP3 file
+func FindImage(mp3URI fyne.URI) (string, error) {
+	// Get the directory of the MP3 file
+	mp3Path := mp3URI.Path()
+	mp3Dir := filepath.Dir(mp3Path)
 
 	// Read files in the directory
-	files, err := os.ReadDir(dir)
+	files, err := os.ReadDir(mp3Dir)
 	if err != nil {
-		fmt.Println("Error reading directory:", err)
-		return "", err
+		return "", fmt.Errorf("error reading directory: %v", err)
 	}
 
 	// Loop through files and find images
 	for _, file := range files {
 		if !file.IsDir() && isImageFile(file.Name()) {
 			fmt.Println("Found image:", file.Name())
-			imageName = file.Name()
+			return filepath.Join(mp3Dir, file.Name()), nil
 		}
 	}
-	return imageName, err
+
+	// If no image is found, return an empty string
+	return "", nil
 }
 
 // isImageFile checks if the file has an image extension
