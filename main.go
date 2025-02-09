@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"image/color"
 	"os"
-	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -19,6 +18,7 @@ import (
 	"github.com/faiface/beep/effects"
 	"github.com/faiface/beep/mp3"
 	"github.com/faiface/beep/speaker"
+	"github.com/izzzicos/audiobook-player/helper"
 )
 
 type audioPanel struct {
@@ -75,49 +75,41 @@ func tidyUp() {
 	fmt.Println("Exited")
 }
 
-// isImageFile checks if the file has an image extension
-func isImageFile(filename string) bool {
-	extensions := []string{".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".webp"}
-	for _, ext := range extensions {
-		if strings.HasSuffix(strings.ToLower(filename), ext) {
-			return true
-		}
-	}
-	return false
-}
-
-func findImage() (string, error) {
-	dir, err := os.Getwd()
-	imageName := ""
-	if err != nil {
-		fmt.Println("Error getting current directory:", err)
-		return "", err
-	}
-
-	// Read files in the directory
-	files, err := os.ReadDir(dir)
-	if err != nil {
-		fmt.Println("Error reading directory:", err)
-		return "", err
-	}
-
-	// Loop through files and find images
-	for _, file := range files {
-		if !file.IsDir() && isImageFile(file.Name()) {
-			fmt.Println("Found image:", file.Name())
-			imageName = file.Name()
-		}
-	}
-	return imageName, err
-}
-
 var (
 	ap            *audioPanel // Audio panel for controlling playback
 	currentFileURI fyne.URI   // Save current file location
 )
 
+// trackedStreamer wraps a StreamSeeker to track the total length and current position
+type trackedStreamer struct {
+	beep.StreamSeeker
+	totalSamples int
+	currentPos   int
+}
+
+func (ts *trackedStreamer) Stream(samples [][2]float64) (n int, ok bool) {
+	n, ok = ts.StreamSeeker.Stream(samples)
+	ts.currentPos += n
+	return n, ok
+}
+
+func (ts *trackedStreamer) Seek(p int) error {
+	err := ts.StreamSeeker.Seek(p)
+	if err == nil {
+		ts.currentPos = p
+	}
+	return err
+}
+
+func (ts *trackedStreamer) Len() int {
+	return ts.totalSamples
+}
+
+func (ts *trackedStreamer) Position() int {
+	return ts.currentPos
+}
+
 func main() {
-	// Use a unique ID for the app
 	a := app.NewWithID("com.example.audiobookplayer")
 	w := a.NewWindow("Audiobook player")
 	w.Resize(fyne.NewSize(800, 800))
@@ -143,13 +135,22 @@ func main() {
 	gridSpeedControls := container.New(layout.NewGridLayout(2), speedIncBtn, speedDecBtn)
 	gridSkipControls := container.New(layout.NewGridLayout(2), forwardBtn, backwardBtn)
 
-	imageName, err := findImage()
+	// Display Audiobook image
+	imageName, err := helper.FindImage()
 	if err != nil {
 		fmt.Println("Error reading directory:", err)
 	}
-	fmt.Println(imageName)
 	image := canvas.NewImageFromURI(storage.NewFileURI(imageName))
 	image.FillMode = canvas.ImageFillOriginal
+
+	// Progress bar
+	progressBar := widget.NewProgressBar()
+	progressBar.Min = 0
+	progressBar.Max = 1
+
+	// Time labels
+	currentTimeLabel := widget.NewLabel("00:00:00")
+	totalTimeLabel := widget.NewLabel("00:00:00")
 
 	// Disable buttons initially
 	playBtn.Disable()
@@ -160,6 +161,33 @@ func main() {
 	volumeIncBtn.Disable()
 	forwardBtn.Disable()
 	backwardBtn.Disable()
+
+	// Function to update progress bar and time labels
+	updateProgress := func() {
+		for {
+			time.Sleep(100 * time.Millisecond) // Update every 100ms
+			if ap != nil && ap.streamer != nil {
+				currentPos := ap.streamer.Position()
+				totalLen := ap.streamer.Len()
+
+				// Update progress bar
+				progress := float64(currentPos) / float64(totalLen)
+				if totalLen > 0 {
+					progressBar.SetValue(progress)
+				}
+
+				// Update current time label
+				currentSeconds := float64(currentPos) / float64(ap.sampleRate)
+				currentTimeLabel.SetText(helper.FormatTime(currentSeconds))
+				// Set Total time label
+				totalTime := (float64(totalLen)) / float64(ap.sampleRate)
+				totalTimeLabel.SetText(helper.FormatTime(totalTime))
+			}
+		}
+	}
+
+	// Start the progress updater
+	go updateProgress()
 
 	btn := widget.NewButton("Open MP3 File", func() {
 		// Create a file filter for .mp3 files only
@@ -188,8 +216,7 @@ func main() {
 
 			uri := reader.URI()
 			currentFileURI = uri
-			label.SetText("Selected: " + uri.Name())
-			fmt.Println(uri)
+			label.SetText("Playing: " + uri.Name())
 			image = canvas.NewImageFromURI(uri)
 
 			// Load and play the MP3 file
@@ -206,14 +233,30 @@ func main() {
 				return
 			}
 
+			// Verify streamer length
+			if streamer.Len() == 0 {
+				fmt.Println("Error: Streamer length is 0")
+				return
+			}
+
 			// Initialize the speaker with the sample rate of the MP3 file
 			speaker.Init(format.SampleRate, format.SampleRate.N(time.Second/10))
 
+			// Wrap the streamer with the trackedStreamer
+			tracked := &trackedStreamer{
+				StreamSeeker: streamer,
+				totalSamples: streamer.Len(),
+			}
+
 			// Create the audio panel
-			ap = newAudioPanel(format.SampleRate, streamer)
+			ap = newAudioPanel(format.SampleRate, tracked)
 
 			// Enable Play button
 			playBtn.Enable()
+
+			// Set total time label
+			totalSeconds := float64(tracked.Len()) / float64(format.SampleRate)
+			totalTimeLabel.SetText(helper.FormatTime(totalSeconds))
 		}, w)
 
 		// Set the filter and starting directory for the file dialog
@@ -300,10 +343,18 @@ func main() {
 		}
 	}
 
+	// Add progress bar and time labels to the UI
+	progressContainer := container.NewHBox(
+		currentTimeLabel,
+		progressBar,
+		totalTimeLabel,
+	)
+
 	w.SetContent(container.NewVBox(
 		btn,
 		label,
 		image,
+		progressContainer,
 		gridPlayControls, gridVolumeControls, gridSpeedControls, gridSkipControls,
 	))
 
@@ -323,7 +374,7 @@ func main() {
 		}
 	})
 
-	// After setting up UI elements but before w.ShowAndRun()
+	// Load preferences
 	prefs := a.Preferences()
 	savedURIStr := prefs.String("lastFile")
 	savedPosition := prefs.Float("lastPosition")
