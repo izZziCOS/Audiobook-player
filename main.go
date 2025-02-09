@@ -157,6 +157,15 @@ func main() {
 	// Display Audiobook image
 	image := canvas.NewImageFromFile("") // Initially empty
 	image.FillMode = canvas.ImageFillOriginal
+	imageContainer := container.NewGridWrap(fyne.NewSize(500, 500), image)
+	updateImageAndContainer := func(uri fyne.URI) {
+    // Update the image based on the selected MP3 file
+    updateImage(image, uri)
+
+    // Refresh the image and container
+    image.Refresh()
+    imageContainer.Refresh()
+}
 	image.Resize(fyne.NewSize(500, 500))
 	image.Refresh() // Force the image to refresh
 
@@ -235,7 +244,7 @@ func main() {
 			currentFileURI = uri
 			label.TextStyle.Bold = true
 			label.SetText("Playing: " + uri.Name())
-			updateImage(image, reader.URI())
+			updateImageAndContainer(reader.URI())
 
 			// Load and play the MP3 file
 			file, err := os.Open(reader.URI().Path())
@@ -365,11 +374,12 @@ func main() {
 
 	// Center the progress container
 	centeredProgressContainer := container.NewCenter(container.NewGridWrap(fyne.NewSize(600, 20), progressBar))
+	centeredImageContainer := container.NewCenter(imageContainer)
 
 	w.SetContent(container.NewVBox(
 		btn,
 		container.NewCenter(label),
-		image,
+		centeredImageContainer,
 		centeredProgressContainer,
 		timeContent,
 		gridPlayControls, gridSpeedControls,
@@ -447,9 +457,7 @@ func main() {
 					currentFileURI = uri
 					label.SetText(uri.Name())
 					
-					updateImage(image, uri)
-					image.Resize(fyne.NewSize(500, 500)) // Set the desired size
-                	image.Refresh() // Force the image to refresh
+					updateImageAndContainer(uri)
 
 					if wasPlaying {
 						ap.play()
