@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"image/color"
 	"os"
 	"time"
 
@@ -27,13 +26,33 @@ type UI struct {
 	Window         fyne.Window
 	AudioPanel     *audio.AudioPanel
 	CurrentFileURI fyne.URI
+	Label          *widget.Label
+	Controls       *PlayerControls
+	Progress       *ProgressBar
+	ImageContainer *ImageHandler
 }
+
+type PlayerControls struct {
+	PlayBtn, PauseBtn, SpeedIncBtn, SpeedDecBtn, VolumeIncBtn, VolumeDecBtn, ForwardBtn, BackwardBtn *widget.Button
+}
+
+type ProgressBar struct {
+	Bar              *widget.ProgressBar
+	CurrentTimeLabel *widget.Label
+	TotalTimeLabel   *widget.Label
+}
+
+type ImageHandler struct {
+	Image         *canvas.Image
+	Container     *fyne.Container
+	UpdateImageFn func(uri fyne.URI)
+}
+
 
 func NewUI() *UI {
 	a := app.NewWithID("com.example.audiobookplayer")
 	w := a.NewWindow("Audiobook player")
 	w.Resize(fyne.NewSize(600, 700))
-	w.SetFixedSize(true)
 
 	return &UI{
 		App:    a,
@@ -42,36 +61,68 @@ func NewUI() *UI {
 }
 
 func (ui *UI) SetupUI() {
-	label := widget.NewLabel("Select an MP3 file...")
-	playBtn := widget.NewButtonWithIcon("", theme.MediaPlayIcon(), nil)
-	pauseBtn := widget.NewButtonWithIcon("", theme.MediaPauseIcon(), nil)
+	ui.Label = widget.NewLabel("Select an MP3 file...")
+	ui.Controls = ui.createPlayerControls()
+	ui.Progress = ui.createProgressBar()
+	ui.ImageContainer = ui.createImageContainer()
 
-	line := canvas.NewLine(color.White)
-	line.StrokeWidth = 5
+	btn := widget.NewButton("Open MP3 File", ui.openMP3FileDialog)
 
-	speedIncBtn := widget.NewButton("Increase speed", nil)
-	speedDecBtn := widget.NewButton("Decrease speed", nil)
+	ui.Window.SetContent(container.NewVBox(
+		btn,
+		container.NewCenter(ui.Label),
+		container.NewCenter(ui.ImageContainer.Container),
+		ui.Progress.Bar,
+		container.NewBorder(nil, nil, ui.Progress.CurrentTimeLabel, ui.Progress.TotalTimeLabel),
+		ui.Controls.createControlGrid(),
+		ui.Controls.createSpeedGrid(),
+	))
 
-	volumeIncBtn := widget.NewButtonWithIcon("", theme.VolumeUpIcon(), nil)
-	volumeDecBtn := widget.NewButtonWithIcon("", theme.VolumeDownIcon(), nil)
+	ui.Window.SetOnClosed(ui.savePreferences)
+	ui.loadPreferences()
 
-	forwardBtn := widget.NewButtonWithIcon("", theme.MediaFastForwardIcon(), nil)
-	backwardBtn := widget.NewButtonWithIcon("", theme.MediaFastRewindIcon(), nil)
+	ui.Window.ShowAndRun()
+}
 
-	gridPlayControls := container.New(layout.NewGridLayout(6), volumeDecBtn, backwardBtn, playBtn, pauseBtn, forwardBtn, volumeIncBtn)
-	gridSpeedControls := container.New(layout.NewGridLayout(2), speedDecBtn, speedIncBtn)
-
-	image := canvas.NewImageFromFile("")
-	image.FillMode = canvas.ImageFillOriginal
-	imageContainer := container.NewGridWrap(fyne.NewSize(500, 500), image)
-	updateImageAndContainer := func(uri fyne.URI) {
-		updateImage(image, uri)
-		image.Refresh()
-		imageContainer.Refresh()
+func (ui *UI) createPlayerControls() *PlayerControls {
+	controls := &PlayerControls{
+		PlayBtn:      widget.NewButtonWithIcon("", theme.MediaPlayIcon(), ui.play),
+		PauseBtn:     widget.NewButtonWithIcon("", theme.MediaPauseIcon(), ui.pause),
+		VolumeIncBtn: widget.NewButtonWithIcon("", theme.VolumeUpIcon(), ui.increaseVolume),
+		VolumeDecBtn: widget.NewButtonWithIcon("", theme.VolumeDownIcon(), ui.decreaseVolume),
+		ForwardBtn:   widget.NewButtonWithIcon("", theme.MediaFastForwardIcon(), ui.skipForward),
+		BackwardBtn:  widget.NewButtonWithIcon("", theme.MediaFastRewindIcon(), ui.skipBackward),
+		SpeedIncBtn:  widget.NewButton("Increase speed", ui.increaseSpeed),
+		SpeedDecBtn:  widget.NewButton("Decrease speed", ui.decreaseSpeed),
 	}
-	image.Resize(fyne.NewSize(500, 500))
-	image.Refresh()
 
+	controls.disableAll()
+	return controls
+}
+
+
+func (pc *PlayerControls) createControlGrid() *fyne.Container {
+	return container.New(layout.NewGridLayout(6),
+		pc.VolumeDecBtn, pc.BackwardBtn, pc.PlayBtn, pc.PauseBtn, pc.ForwardBtn, pc.VolumeIncBtn)
+}
+
+func (pc *PlayerControls) createSpeedGrid() *fyne.Container {
+	return container.New(layout.NewGridLayout(2),
+		pc.SpeedDecBtn, pc.SpeedIncBtn)
+}
+
+func (pc *PlayerControls) disableAll() {
+	pc.PlayBtn.Disable()
+	pc.PauseBtn.Disable()
+	pc.SpeedIncBtn.Disable()
+	pc.SpeedDecBtn.Disable()
+	pc.VolumeDecBtn.Disable()
+	pc.VolumeIncBtn.Disable()
+	pc.ForwardBtn.Disable()
+	pc.BackwardBtn.Disable()
+}
+
+func (ui *UI) createProgressBar() *ProgressBar {
 	progressBar := widget.NewProgressBar()
 	progressBar.Min = 0
 	progressBar.Max = 1
@@ -79,198 +130,174 @@ func (ui *UI) SetupUI() {
 	currentTimeLabel := widget.NewLabel("00:00:00")
 	totalTimeLabel := widget.NewLabel("00:00:00")
 
-	playBtn.Disable()
-	pauseBtn.Disable()
-	speedIncBtn.Disable()
-	speedDecBtn.Disable()
-	volumeDecBtn.Disable()
-	volumeIncBtn.Disable()
-	forwardBtn.Disable()
-	backwardBtn.Disable()
+	go ui.updateProgress(progressBar, currentTimeLabel, totalTimeLabel)
 
-	updateProgress := func() {
-		for {
-			time.Sleep(100 * time.Millisecond)
-			if ui.AudioPanel != nil && ui.AudioPanel.Streamer != nil {
-				currentPos := ui.AudioPanel.Streamer.Position()
-				totalLen := ui.AudioPanel.Streamer.Len()
-
-				progress := float64(currentPos) / float64(totalLen)
-				if totalLen > 0 {
-					progressBar.SetValue(progress)
-				}
-
-				currentSeconds := float64(currentPos) / float64(ui.AudioPanel.SampleRate)
-				currentTimeLabel.SetText(helper.FormatTime(currentSeconds))
-				totalTime := (float64(totalLen)) / float64(ui.AudioPanel.SampleRate)
-				totalTimeLabel.SetText(helper.FormatTime(totalTime))
-			}
-		}
+	return &ProgressBar{
+		Bar:              progressBar,
+		CurrentTimeLabel: currentTimeLabel,
+		TotalTimeLabel:   totalTimeLabel,
 	}
+}
 
-	go updateProgress()
+func (ui *UI) createImageContainer() *ImageHandler {
+	image := canvas.NewImageFromFile("")
+	image.FillMode = canvas.ImageFillOriginal
+	imageContainer := container.NewGridWrap(fyne.NewSize(500, 500), image)
 
-	btn := widget.NewButton("Open MP3 File", func() {
-		filter := storage.NewExtensionFileFilter([]string{".mp3"})
-
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			fmt.Println("Error getting home directory:", err)
-			return
-		}
-
-		startDir, err := storage.ListerForURI(storage.NewFileURI(homeDir))
-		if err != nil {
-			fmt.Println("Error creating listable URI:", err)
-			return
-		}
-
-		fileDialog := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
-			if err != nil || reader == nil {
-				return
-			}
-			defer reader.Close()
-
-			uri := reader.URI()
-			ui.CurrentFileURI = uri
-			label.TextStyle.Bold = true
-			label.SetText("Playing: " + uri.Name())
-			updateImageAndContainer(reader.URI())
-
-			file, err := os.Open(reader.URI().Path())
+	return &ImageHandler{
+		Image:     image,
+		Container: imageContainer,
+		UpdateImageFn: func(uri fyne.URI) {
+			imagePath, err := helper.FindImage(uri)
 			if err != nil {
-				fmt.Println("Error opening file:", err)
+				fmt.Println("Error finding image:", err)
 				return
 			}
 
-			streamer, format, err := mp3.Decode(file)
-			if err != nil {
-				fmt.Println("Error decoding MP3:", err)
-				return
-			}
-
-			if streamer.Len() == 0 {
-				fmt.Println("Error: Streamer length is 0")
-				return
-			}
-
-			speaker.Init(format.SampleRate, format.SampleRate.N(time.Second/10))
-
-			tracked := &trackedStreamer{
-				StreamSeeker: streamer,
-				totalSamples: streamer.Len(),
-			}
-
-			ui.AudioPanel = audio.NewAudioPanel(format.SampleRate, tracked)
-
-			playBtn.Enable()
-
-			totalSeconds := float64(tracked.Len()) / float64(format.SampleRate)
-			totalTimeLabel.SetText(helper.FormatTime(totalSeconds))
-		}, ui.Window)
-
-		fileDialog.SetFilter(filter)
-		fileDialog.SetLocation(startDir)
-		fileDialog.Show()
-	})
-
-	playBtn.OnTapped = func() {
-		if ui.AudioPanel != nil {
-			if ui.AudioPanel.Ctrl.Paused {
-				ui.AudioPanel.Ctrl.Paused = false
+			if imagePath != "" {
+				image.File = imagePath
 			} else {
-				ui.AudioPanel.Play()
+				image.File = ""
 			}
-			playBtn.Disable()
-			pauseBtn.Enable()
-			speedIncBtn.Enable()
-			speedDecBtn.Enable()
-			volumeDecBtn.Enable()
-			volumeIncBtn.Enable()
-			forwardBtn.Enable()
-			backwardBtn.Enable()
-		}
+			image.Refresh()
+			imageContainer.Refresh()
+		},
 	}
+}
 
-	pauseBtn.OnTapped = func() {
-		if ui.AudioPanel != nil {
-			ui.AudioPanel.Pause()
-			playBtn.Enable()
-			pauseBtn.Disable()
-			speedDecBtn.Disable()
-			speedIncBtn.Disable()
-			volumeDecBtn.Disable()
-			volumeIncBtn.Disable()
-			forwardBtn.Disable()
-			backwardBtn.Disable()
-		}
-	}
+func (ui *UI) updateProgress(progressBar *widget.ProgressBar, currentTimeLabel, totalTimeLabel *widget.Label) {
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
 
-	speedIncBtn.OnTapped = func() {
-		if ui.AudioPanel != nil {
-			ui.AudioPanel.SetSpeed(ui.AudioPanel.Resampler.Ratio() * 16 / 15)
-		}
-	}
-
-	speedDecBtn.OnTapped = func() {
-		if ui.AudioPanel != nil {
-			ui.AudioPanel.SetSpeed(ui.AudioPanel.Resampler.Ratio() * 15 / 16)
-		}
-	}
-
-	volumeDecBtn.OnTapped = func() {
-		if ui.AudioPanel != nil {
-			ui.AudioPanel.SetVolume(-0.1)
-		}
-	}
-
-	volumeIncBtn.OnTapped = func() {
-		if ui.AudioPanel != nil {
-			ui.AudioPanel.SetVolume(0.1)
-		}
-	}
-
-	forwardBtn.OnTapped = func() {
-		if ui.AudioPanel != nil {
-			ui.AudioPanel.Skip(30)
-		}
-	}
-
-	backwardBtn.OnTapped = func() {
-		if ui.AudioPanel != nil {
-			ui.AudioPanel.Skip(-30)
-		}
-	}
-
-	timeContent := container.New(layout.NewBorderLayout(nil, nil, currentTimeLabel, totalTimeLabel), currentTimeLabel, totalTimeLabel)
-
-	centeredProgressContainer := container.NewCenter(container.NewGridWrap(fyne.NewSize(600, 20), progressBar))
-	centeredImageContainer := container.NewCenter(imageContainer)
-
-	ui.Window.SetContent(container.NewVBox(
-		btn,
-		container.NewCenter(label),
-		centeredImageContainer,
-		centeredProgressContainer,
-		timeContent,
-		gridPlayControls, gridSpeedControls,
-	))
-
-	ui.Window.SetOnClosed(func() {
-		if ui.AudioPanel != nil && ui.AudioPanel.Streamer != nil && ui.CurrentFileURI != nil {
-			prefs := ui.App.Preferences()
+	for range ticker.C {
+		if ui.AudioPanel != nil && ui.AudioPanel.Streamer != nil {
 			currentPos := ui.AudioPanel.Streamer.Position()
-			positionInSeconds := float64(currentPos) / float64(ui.AudioPanel.SampleRate)
-			isPlaying := !ui.AudioPanel.Ctrl.Paused
+			totalLen := ui.AudioPanel.Streamer.Len()
 
-			fmt.Printf("Saving preferences: file=%s, position=%.2f, playing=%v\n", ui.CurrentFileURI.String(), positionInSeconds, isPlaying)
+			progress := float64(currentPos) / float64(totalLen)
+			if totalLen > 0 {
+				progressBar.SetValue(progress)
+			}
 
-			prefs.SetString("lastFile", ui.CurrentFileURI.String())
-			prefs.SetFloat("lastPosition", positionInSeconds)
-			prefs.SetBool("wasPlaying", isPlaying)
+			currentSeconds := float64(currentPos) / float64(ui.AudioPanel.SampleRate)
+			currentTimeLabel.SetText(helper.FormatTime(currentSeconds))
+			totalTime := float64(totalLen) / float64(ui.AudioPanel.SampleRate)
+			totalTimeLabel.SetText(helper.FormatTime(totalTime))
 		}
-	})
+	}
+}
 
+func (ui *UI) openMP3FileDialog() {
+	filter := storage.NewExtensionFileFilter([]string{".mp3"})
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Println("Error getting home directory:", err)
+		return
+	}
+
+	startDir, err := storage.ListerForURI(storage.NewFileURI(homeDir))
+	if err != nil {
+		fmt.Println("Error creating listable URI:", err)
+		return
+	}
+
+	fileDialog := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
+		if err != nil || reader == nil {
+			return
+		}
+		defer reader.Close()
+
+		uri := reader.URI()
+		ui.CurrentFileURI = uri
+		ui.Label.TextStyle.Bold = true
+		ui.Label.SetText("Playing: " + uri.Name())
+		ui.ImageContainer.UpdateImageFn(uri)
+
+		file, err := os.Open(reader.URI().Path())
+		if err != nil {
+			fmt.Println("Error opening file:", err)
+			return
+		}
+
+		streamer, format, err := mp3.Decode(file)
+		if err != nil {
+			fmt.Println("Error decoding MP3:", err)
+			return
+		}
+
+		if streamer.Len() == 0 {
+			fmt.Println("Error: Streamer length is 0")
+			return
+		}
+
+		speaker.Init(format.SampleRate, format.SampleRate.N(time.Second/10))
+
+		tracked := &trackedStreamer{
+			StreamSeeker: streamer,
+			totalSamples: streamer.Len(),
+		}
+
+		ui.AudioPanel = audio.NewAudioPanel(format.SampleRate, tracked)
+		ui.Controls.PlayBtn.Enable()
+
+		totalSeconds := float64(tracked.Len()) / float64(format.SampleRate)
+		ui.Progress.TotalTimeLabel.SetText(helper.FormatTime(totalSeconds))
+	}, ui.Window)
+
+	fileDialog.SetFilter(filter)
+	fileDialog.SetLocation(startDir)
+	fileDialog.Show()
+}
+
+func (ui *UI) play() {
+	if ui.AudioPanel != nil {
+		if ui.AudioPanel.Ctrl.Paused {
+			ui.AudioPanel.Ctrl.Paused = false
+		} else {
+			ui.AudioPanel.Play()
+		}
+		ui.Controls.PlayBtn.Disable()
+		ui.Controls.PauseBtn.Enable()
+		ui.Controls.SpeedIncBtn.Enable()
+		ui.Controls.SpeedDecBtn.Enable()
+		ui.Controls.VolumeDecBtn.Enable()
+		ui.Controls.VolumeIncBtn.Enable()
+		ui.Controls.ForwardBtn.Enable()
+		ui.Controls.BackwardBtn.Enable()
+	}
+}
+
+func (ui *UI) pause() {
+	if ui.AudioPanel != nil {
+		ui.AudioPanel.Pause()
+		ui.Controls.PlayBtn.Enable()
+		ui.Controls.PauseBtn.Disable()
+		ui.Controls.SpeedDecBtn.Disable()
+		ui.Controls.SpeedIncBtn.Disable()
+		ui.Controls.VolumeDecBtn.Disable()
+		ui.Controls.VolumeIncBtn.Disable()
+		ui.Controls.ForwardBtn.Disable()
+		ui.Controls.BackwardBtn.Disable()
+	}
+}
+
+func (ui *UI) savePreferences() {
+	if ui.AudioPanel != nil && ui.AudioPanel.Streamer != nil && ui.CurrentFileURI != nil {
+		prefs := ui.App.Preferences()
+		currentPos := ui.AudioPanel.Streamer.Position()
+		positionInSeconds := float64(currentPos) / float64(ui.AudioPanel.SampleRate)
+		isPlaying := !ui.AudioPanel.Ctrl.Paused
+
+		fmt.Printf("Saving preferences: file=%s, position=%.2f, playing=%v\n", ui.CurrentFileURI.String(), positionInSeconds, isPlaying)
+
+		prefs.SetString("lastFile", ui.CurrentFileURI.String())
+		prefs.SetFloat("lastPosition", positionInSeconds)
+		prefs.SetBool("wasPlaying", isPlaying)
+	}
+}
+
+func (ui *UI) loadPreferences() {
 	prefs := ui.App.Preferences()
 	savedURIStr := prefs.String("lastFile")
 	savedPosition := prefs.Float("lastPosition")
@@ -291,7 +318,6 @@ func (ui *UI) SetupUI() {
 				prefs.SetFloat("lastPosition", 0)
 				prefs.SetBool("wasPlaying", false)
 			} else {
-				// Show the resume dialog
 				resumeDialog := dialog.NewConfirm("Resume Playback", "Resume playback from "+uri.Name()+"?", func(resume bool) {
 					if !resume {
 						prefs.SetString("lastFile", "")
@@ -300,7 +326,6 @@ func (ui *UI) SetupUI() {
 						return
 					}
 
-					// Load the file and resume playback
 					file, err := os.Open(filePath)
 					if err != nil {
 						dialog.ShowError(err, ui.Window)
@@ -327,25 +352,24 @@ func (ui *UI) SetupUI() {
 						return
 					}
 
-					label.TextStyle.Bold = true
 					ui.CurrentFileURI = uri
-					label.SetText(uri.Name())
-
-					updateImageAndContainer(uri)
+					ui.Label.TextStyle.Bold = true
+					ui.Label.SetText(uri.Name())
+					ui.ImageContainer.UpdateImageFn(uri)
 
 					if wasPlaying {
 						ui.AudioPanel.Play()
-						playBtn.Disable()
-						pauseBtn.Enable()
-						speedIncBtn.Enable()
-						speedDecBtn.Enable()
-						volumeDecBtn.Enable()
-						volumeIncBtn.Enable()
-						forwardBtn.Enable()
-						backwardBtn.Enable()
+						ui.Controls.PlayBtn.Disable()
+						ui.Controls.PauseBtn.Enable()
+						ui.Controls.SpeedIncBtn.Enable()
+						ui.Controls.SpeedDecBtn.Enable()
+						ui.Controls.VolumeDecBtn.Enable()
+						ui.Controls.VolumeIncBtn.Enable()
+						ui.Controls.ForwardBtn.Enable()
+						ui.Controls.BackwardBtn.Enable()
 					} else {
-						playBtn.Enable()
-						pauseBtn.Disable()
+						ui.Controls.PlayBtn.Enable()
+						ui.Controls.PauseBtn.Disable()
 					}
 				}, ui.Window)
 				resumeDialog.SetConfirmText("Resume")
@@ -354,8 +378,6 @@ func (ui *UI) SetupUI() {
 			}
 		}
 	}
-
-	ui.Window.ShowAndRun()
 }
 
 func updateImage(image *canvas.Image, uri fyne.URI) {
@@ -371,6 +393,42 @@ func updateImage(image *canvas.Image, uri fyne.URI) {
 	} else {
 		image.File = ""
 		image.Refresh()
+	}
+}
+
+func (ui *UI) increaseSpeed() {
+	if ui.AudioPanel != nil {
+		ui.AudioPanel.SetSpeed(ui.AudioPanel.Resampler.Ratio() * 16 / 15)
+	}
+}
+
+func (ui *UI) decreaseSpeed() {
+	if ui.AudioPanel != nil {
+		ui.AudioPanel.SetSpeed(ui.AudioPanel.Resampler.Ratio() * 15 / 16)
+	}
+}
+
+func (ui *UI) increaseVolume() {
+	if ui.AudioPanel != nil {
+		ui.AudioPanel.SetVolume(0.1)
+	}
+}
+
+func (ui *UI) decreaseVolume() {
+	if ui.AudioPanel != nil {
+		ui.AudioPanel.SetVolume(-0.1)
+	}
+}
+
+func (ui *UI) skipForward() {
+	if ui.AudioPanel != nil {
+		ui.AudioPanel.Skip(30)
+	}
+}
+
+func (ui *UI) skipBackward() {
+	if ui.AudioPanel != nil {
+		ui.AudioPanel.Skip(-30)
 	}
 }
 
