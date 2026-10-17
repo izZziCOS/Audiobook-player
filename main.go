@@ -1,10 +1,8 @@
 package main
 
-import (
-	"github.com/izzzicos/audiobook-player/ui"
-)
+import "github.com/izzzicos/audiobook-player/ui"
 
 func main() {
-	ui := ui.NewUI()
-	ui.SetupUI()
+    playerUI := ui.NewUI()
+    playerUI.SetupUI()
 }
