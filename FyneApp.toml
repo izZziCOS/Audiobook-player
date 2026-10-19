@@ -1,0 +1,8 @@
+Website = "https://github.com/izzzicos/audiobook-player"
+
+[Details]
+  Icon = "Icon.png"
+  Name = "Audiobook Player"
+  ID = "com.izzzicos.audiobookplayer"
+  Version = "1.0.0"
+  Build = 1

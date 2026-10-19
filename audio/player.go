@@ -10,76 +10,106 @@ import (
 	"github.com/faiface/beep/speaker"
 )
 
-type AudioPanel struct {
+const OutputSampleRate = beep.SampleRate(44100)
+
+func InitSpeaker() error {
+    return speaker.Init(
+        OutputSampleRate,
+        OutputSampleRate.N(time.Second/10),
+    )
+}
+
+type Player struct {
     SampleRate beep.SampleRate
     Streamer   beep.StreamSeekCloser
-    Ctrl       *beep.Ctrl
+    Stretcher  *Stretcher
     Resampler  *beep.Resampler
+    Ctrl       *beep.Ctrl
     Volume     *effects.Volume
 
     Speed  float64
     Closed bool
+    OnEnd  func()
+
+    queued bool
 }
 
-func NewAudioPanel(
+func NewPlayer(
     sampleRate beep.SampleRate,
     streamer beep.StreamSeekCloser,
-) *AudioPanel {
-    ctrl := &beep.Ctrl{Streamer: streamer}
-    resampler := beep.ResampleRatio(4, 1, ctrl)
+) *Player {
+    stretcher := NewStretcher(sampleRate, streamer)
+    resampler := beep.Resample(4, sampleRate, OutputSampleRate, stretcher)
+    ctrl := &beep.Ctrl{Streamer: resampler}
 
     volume := &effects.Volume{
-        Streamer: resampler,
+        Streamer: ctrl,
         Base:     2,
         Volume:   0,
     }
 
-    return &AudioPanel{
+    return &Player{
         SampleRate: sampleRate,
         Streamer:   streamer,
-        Ctrl:       ctrl,
+        Stretcher:  stretcher,
         Resampler:  resampler,
+        Ctrl:       ctrl,
         Volume:     volume,
         Speed:      1.0,
     }
 }
 
-func (ap *AudioPanel) Play() {
-    if ap == nil || ap.Closed {
+func (p *Player) Play() {
+    if p == nil || p.Closed {
         return
     }
 
     speaker.Lock()
-    ap.Ctrl.Paused = false
+    p.Ctrl.Paused = false
+    if p.Streamer.Position() >= p.Streamer.Len() {
+        _ = p.seek(0)
+    }
+    alreadyQueued := p.queued
+    p.queued = true
     speaker.Unlock()
 
-    speaker.Play(ap.Volume)
+    if !alreadyQueued {
+        speaker.Play(beep.Seq(p.Volume, beep.Callback(p.finish)))
+    }
 }
 
-func (ap *AudioPanel) Pause() {
-    if ap == nil || ap.Closed {
+func (p *Player) finish() {
+    p.queued = false
+
+    if p.OnEnd != nil && !p.Closed {
+        go p.OnEnd()
+    }
+}
+
+func (p *Player) Pause() {
+    if p == nil || p.Closed {
         return
     }
 
     speaker.Lock()
     defer speaker.Unlock()
 
-    ap.Ctrl.Paused = true
+    p.Ctrl.Paused = true
 }
 
-func (ap *AudioPanel) IsPaused() bool {
-    if ap == nil || ap.Closed {
+func (p *Player) IsPaused() bool {
+    if p == nil || p.Closed {
         return true
     }
 
     speaker.Lock()
     defer speaker.Unlock()
 
-    return ap.Ctrl.Paused
+    return p.Ctrl.Paused
 }
 
-func (ap *AudioPanel) SetVolume(value float64) {
-    if ap == nil || ap.Closed {
+func (p *Player) SetVolume(value float64) {
+    if p == nil || p.Closed {
         return
     }
 
@@ -96,12 +126,12 @@ func (ap *AudioPanel) SetVolume(value float64) {
     }
 
     speaker.Lock()
-    ap.Volume.Volume = volume
+    p.Volume.Volume = volume
     speaker.Unlock()
 }
 
-func (ap *AudioPanel) SetSpeed(ratio float64) {
-    if ap == nil || ap.Closed {
+func (p *Player) SetSpeed(ratio float64) {
+    if p == nil || p.Closed {
         return
     }
 
@@ -113,26 +143,26 @@ func (ap *AudioPanel) SetSpeed(ratio float64) {
     }
 
     speaker.Lock()
-    ap.Speed = ratio
-    ap.Resampler.SetRatio(ratio)
+    p.Speed = ratio
+    p.Stretcher.SetTempo(ratio)
     speaker.Unlock()
 }
 
-func (ap *AudioPanel) Skip(seconds int) error {
-    if ap == nil || ap.Closed {
+func (p *Player) Skip(seconds int) error {
+    if p == nil || p.Closed {
         return fmt.Errorf("no active audio stream")
     }
 
     speaker.Lock()
     defer speaker.Unlock()
 
-    length := ap.Streamer.Len()
+    length := p.Streamer.Len()
     if length <= 0 {
         return fmt.Errorf("audio stream is empty")
     }
 
-    position := ap.Streamer.Position()
-    target := position + ap.SampleRate.N(
+    position := p.Streamer.Position()
+    target := position + p.SampleRate.N(
         time.Duration(seconds)*time.Second,
     )
 
@@ -143,18 +173,18 @@ func (ap *AudioPanel) Skip(seconds int) error {
         target = length - 1
     }
 
-    return ap.Streamer.Seek(target)
+    return p.seek(target)
 }
 
-func (ap *AudioPanel) SeekTo(seconds float64) error {
-    if ap == nil || ap.Closed {
+func (p *Player) SeekTo(seconds float64) error {
+    if p == nil || p.Closed {
         return fmt.Errorf("no active audio stream")
     }
 
     speaker.Lock()
     defer speaker.Unlock()
 
-    target := ap.SampleRate.N(
+    target := p.SampleRate.N(
         time.Duration(seconds * float64(time.Second)),
     )
 
@@ -162,7 +192,7 @@ func (ap *AudioPanel) SeekTo(seconds float64) error {
         target = 0
     }
 
-    length := ap.Streamer.Len()
+    length := p.Streamer.Len()
     if length <= 0 {
         return fmt.Errorf("audio stream is empty")
     }
@@ -171,40 +201,52 @@ func (ap *AudioPanel) SeekTo(seconds float64) error {
         target = length - 1
     }
 
-    return ap.Streamer.Seek(target)
+    return p.seek(target)
 }
 
-func (ap *AudioPanel) Position() int {
-    if ap == nil || ap.Closed {
+func (p *Player) seek(target int) error {
+    if err := p.Streamer.Seek(target); err != nil {
+        return err
+    }
+
+    p.Stretcher.Reset()
+    return nil
+}
+
+func (p *Player) Position() int {
+    if p == nil || p.Closed {
         return 0
     }
 
     speaker.Lock()
     defer speaker.Unlock()
 
-    return ap.Streamer.Position()
+    return p.Streamer.Position()
 }
 
-func (ap *AudioPanel) Length() int {
-    if ap == nil || ap.Closed {
+func (p *Player) Length() int {
+    if p == nil || p.Closed {
         return 0
     }
 
     speaker.Lock()
     defer speaker.Unlock()
 
-    return ap.Streamer.Len()
+    return p.Streamer.Len()
 }
 
-func (ap *AudioPanel) Close() error {
-    if ap == nil || ap.Closed {
+func (p *Player) Close() error {
+    if p == nil || p.Closed {
         return nil
     }
 
-    ap.Pause()
-    ap.Closed = true
+    speaker.Lock()
+    p.Ctrl.Paused = true
+    p.Ctrl.Streamer = nil
+    p.Closed = true
+    speaker.Unlock()
 
-    return ap.Streamer.Close()
+    return p.Streamer.Close()
 }
 
 func log2(value float64) float64 {

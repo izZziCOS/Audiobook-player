@@ -1,42 +1,24 @@
-package helper
+package library
 
 import (
     "fmt"
+    "image"
+    _ "image/gif"
+    _ "image/jpeg"
+    _ "image/png"
     "os"
     "path/filepath"
     "strings"
 
-    "fyne.io/fyne/v2"
+    _ "golang.org/x/image/bmp"
+    _ "golang.org/x/image/webp"
 )
 
-func FormatTime(seconds float64) string {
-    if seconds < 0 {
-        seconds = 0
-    }
-
-    totalSeconds := int(seconds)
-    hours := totalSeconds / 3600
-    minutes := (totalSeconds % 3600) / 60
-    remainingSeconds := totalSeconds % 60
-
-    return fmt.Sprintf(
-        "%02d:%02d:%02d",
-        hours,
-        minutes,
-        remainingSeconds,
-    )
-}
-
-func FindImage(mp3URI fyne.URI) (string, error) {
-    if mp3URI == nil {
-        return "", fmt.Errorf("no audio file selected")
-    }
-
-    mp3Path := mp3URI.Path()
-    directory := filepath.Dir(mp3Path)
+func FindCover(audioPath string) (string, error) {
+    directory := filepath.Dir(audioPath)
     audioName := strings.TrimSuffix(
-        filepath.Base(mp3Path),
-        filepath.Ext(mp3Path),
+        filepath.Base(audioPath),
+        filepath.Ext(audioPath),
     )
 
     entries, err := os.ReadDir(directory)
@@ -61,19 +43,31 @@ func FindImage(mp3URI fyne.URI) (string, error) {
         path := filepath.Join(directory, name)
 
         info, err := os.Stat(path)
-        if err == nil && !info.IsDir() {
+        if err == nil && !info.IsDir() && isReadableImage(path) {
             return path, nil
         }
     }
 
     // Otherwise, use the first supported image.
     for _, entry := range entries {
-        if !entry.IsDir() && isImageFile(entry.Name()) {
-            return filepath.Join(directory, entry.Name()), nil
+        path := filepath.Join(directory, entry.Name())
+        if !entry.IsDir() && isImageFile(entry.Name()) && isReadableImage(path) {
+            return path, nil
         }
     }
 
     return "", nil
+}
+
+func isReadableImage(path string) bool {
+    file, err := os.Open(path)
+    if err != nil {
+        return false
+    }
+    defer file.Close()
+
+    _, _, err = image.DecodeConfig(file)
+    return err == nil
 }
 
 func isImageFile(filename string) bool {
