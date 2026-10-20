@@ -5,4 +5,4 @@ Website = "https://github.com/izzzicos/audiobook-player"
   Name = "Audiobook Player"
   ID = "com.izzzicos.audiobookplayer"
   Version = "1.0.0"
-  Build = 1
+  Build = 6

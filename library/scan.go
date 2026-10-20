@@ -6,6 +6,7 @@ import (
     "path/filepath"
     "sort"
     "strings"
+    "time"
 
     "github.com/izzzicos/audiobook-player/audio"
 )
@@ -79,4 +80,97 @@ func nextChunk(text string) (string, string) {
 
 func isDigit(character byte) bool {
     return character >= '0' && character <= '9'
+}
+
+const maxScanDepth = 6
+
+func FindBooks(root string) ([]string, error) {
+    root = normalize(root)
+
+    info, err := os.Stat(root)
+    if err != nil {
+        return nil, err
+    }
+
+    if !info.IsDir() {
+        if !audio.IsSupported(root) {
+            return nil, fmt.Errorf("%q is not a supported audio file", filepath.Base(root))
+        }
+
+        return []string{root}, nil
+    }
+
+    var books []string
+    if err := findBooks(root, 0, &books); err != nil {
+        return nil, err
+    }
+
+    return books, nil
+}
+
+func findBooks(directory string, depth int, books *[]string) error {
+    files, err := ListAudioFiles(directory)
+    if err != nil {
+        return err
+    }
+
+    switch {
+    case len(files) == 0:
+    case allWholeBooks(files):
+        *books = append(*books, files...)
+    default:
+        *books = append(*books, directory)
+    }
+
+    if depth >= maxScanDepth {
+        return nil
+    }
+
+    entries, err := os.ReadDir(directory)
+    if err != nil {
+        return err
+    }
+
+    for _, entry := range entries {
+        if entry.IsDir() && !strings.HasPrefix(entry.Name(), ".") {
+            _ = findBooks(filepath.Join(directory, entry.Name()), depth+1, books)
+        }
+    }
+
+    return nil
+}
+
+func allWholeBooks(files []string) bool {
+    for _, file := range files {
+        if !strings.EqualFold(filepath.Ext(file), ".m4b") {
+            return false
+        }
+    }
+
+    return true
+}
+
+func Inspect(path string) (int, time.Time, error) {
+    info, err := os.Stat(path)
+    if err != nil {
+        return 0, time.Time{}, err
+    }
+
+    if !info.IsDir() {
+        return 1, info.ModTime(), nil
+    }
+
+    files, err := ListAudioFiles(path)
+    if err != nil {
+        return 0, time.Time{}, err
+    }
+
+    var modified time.Time
+    for _, file := range files {
+        if fileInfo, err := os.Stat(file); err == nil && fileInfo.ModTime().After(modified) {
+            modified = fileInfo.ModTime()
+        }
+    }
+
+    return len(files), modified, nil
 }

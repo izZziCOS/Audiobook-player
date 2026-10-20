@@ -1,8 +1,11 @@
 package audio
 
 import (
+    "encoding/binary"
+    "errors"
     "fmt"
     "io"
+    "math"
     "os"
     "path/filepath"
     "strings"
@@ -12,9 +15,11 @@ import (
     "github.com/faiface/beep/wav"
     "github.com/jfreymuth/oggvorbis"
     mewkizflac "github.com/mewkiz/flac"
+    aacpcm "github.com/tphakala/go-aac/pcm"
+    "github.com/tphakala/go-m4a/aacm4a"
 )
 
-var SupportedExtensions = []string{".mp3", ".wav", ".flac", ".ogg", ".oga"}
+var SupportedExtensions = []string{".mp3", ".m4b", ".m4a", ".wav", ".flac", ".ogg", ".oga"}
 
 func IsSupported(name string) bool {
     extension := strings.ToLower(filepath.Ext(name))
@@ -38,9 +43,27 @@ func Decode(file *os.File) (beep.StreamSeekCloser, beep.Format, error) {
         return decodeFLAC(file)
     case ".ogg", ".oga":
         return decodeVorbis(file)
+    case ".m4b", ".m4a":
+        return decodeM4A(file)
     default:
         return nil, beep.Format{}, fmt.Errorf("unsupported audio format %q", extension)
     }
+}
+
+func Duration(path string) (float64, error) {
+    file, err := os.Open(path)
+    if err != nil {
+        return 0, err
+    }
+
+    streamer, format, err := Decode(file)
+    if err != nil {
+        file.Close()
+        return 0, err
+    }
+    defer streamer.Close()
+
+    return float64(streamer.Len()) / float64(format.SampleRate), nil
 }
 
 type scaledStreamer struct {
@@ -284,5 +307,142 @@ func (d *vorbisDecoder) Seek(position int) error {
 }
 
 func (d *vorbisDecoder) Close() error {
+    return d.file.Close()
+}
+
+const aacFrameSize = 1024
+
+var errHEAAC = errors.New("this file is HE-AAC encoded, which is not supported, only AAC-LC M4B and M4A files are")
+
+type m4aDecoder struct {
+    file     io.Closer
+    decoder  *aacm4a.Decoder
+    channels int
+    delay    int
+    length   int
+    position int
+    skip     int
+    buffer   []byte
+    ended    bool
+    err      error
+}
+
+func decodeM4A(file *os.File) (beep.StreamSeekCloser, beep.Format, error) {
+    decoder, info, err := aacm4a.NewSeekableDecoder(file)
+    if err != nil {
+        return nil, beep.Format{}, m4aError(err)
+    }
+
+    if info.Channels < 1 || info.Channels > 2 {
+        return nil, beep.Format{}, fmt.Errorf("m4a: %d audio channels are not supported, only mono and stereo are", info.Channels)
+    }
+
+    d := &m4aDecoder{
+        file:     file,
+        decoder:  decoder,
+        channels: info.Channels,
+        delay:    int(info.EncoderDelay),
+        length:   int(math.Ceil(info.Duration.Seconds() * float64(info.SampleRate))),
+    }
+
+    if err := d.Seek(0); err != nil {
+        return nil, beep.Format{}, err
+    }
+    d.read(1)
+    if d.err != nil {
+        return nil, beep.Format{}, d.err
+    }
+    if err := d.Seek(0); err != nil {
+        return nil, beep.Format{}, err
+    }
+
+    format := beep.Format{
+        SampleRate:  beep.SampleRate(info.SampleRate),
+        NumChannels: info.Channels,
+        Precision:   2,
+    }
+
+    return d, format, nil
+}
+
+func m4aError(err error) error {
+    if errors.Is(err, aacpcm.ErrUnsupportedSBR) {
+        return errHEAAC
+    }
+
+    return fmt.Errorf("m4a: %w", err)
+}
+
+func (d *m4aDecoder) read(frames int) int {
+    size := frames * d.channels * 2
+    if cap(d.buffer) < size {
+        d.buffer = make([]byte, size)
+    }
+    d.buffer = d.buffer[:size]
+
+    read, err := io.ReadFull(d.decoder, d.buffer)
+    switch {
+    case err == io.EOF || err == io.ErrUnexpectedEOF:
+        d.ended = true
+    case err != nil:
+        d.err = m4aError(err)
+    }
+
+    return read / (d.channels * 2)
+}
+
+func (d *m4aDecoder) Stream(samples [][2]float64) (n int, ok bool) {
+    for d.skip > 0 && !d.ended && d.err == nil {
+        d.skip -= d.read(min(d.skip, aacFrameSize))
+    }
+
+    for n < len(samples) && d.position < d.length && !d.ended && d.err == nil {
+        read := d.read(min(len(samples)-n, d.length-d.position))
+
+        for i := 0; i < read; i++ {
+            frame := d.buffer[i*d.channels*2:]
+            left := float64(int16(binary.LittleEndian.Uint16(frame))) / 32768
+            right := left
+            if d.channels == 2 {
+                right = float64(int16(binary.LittleEndian.Uint16(frame[2:]))) / 32768
+            }
+
+            samples[n+i] = [2]float64{left, right}
+        }
+
+        n += read
+        d.position += read
+    }
+
+    return n, n > 0
+}
+
+func (d *m4aDecoder) Err() error {
+    return d.err
+}
+
+func (d *m4aDecoder) Len() int {
+    return d.length
+}
+
+func (d *m4aDecoder) Position() int {
+    return d.position
+}
+
+func (d *m4aDecoder) Seek(position int) error {
+    linear := d.delay + position
+    if err := d.decoder.SeekSample(linear / aacFrameSize); err != nil {
+        return m4aError(err)
+    }
+
+    d.position = position
+    d.skip = linear % aacFrameSize
+    d.ended = false
+    d.err = nil
+
+    return nil
+}
+
+func (d *m4aDecoder) Close() error {
     return d.file.Close()
 }

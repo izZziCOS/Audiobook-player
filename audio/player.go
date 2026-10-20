@@ -127,6 +127,7 @@ func (p *Player) SetVolume(value float64) {
 
     speaker.Lock()
     p.Volume.Volume = volume
+    p.Volume.Silent = value == 0
     speaker.Unlock()
 }
 
@@ -146,34 +147,6 @@ func (p *Player) SetSpeed(ratio float64) {
     p.Speed = ratio
     p.Stretcher.SetTempo(ratio)
     speaker.Unlock()
-}
-
-func (p *Player) Skip(seconds int) error {
-    if p == nil || p.Closed {
-        return fmt.Errorf("no active audio stream")
-    }
-
-    speaker.Lock()
-    defer speaker.Unlock()
-
-    length := p.Streamer.Len()
-    if length <= 0 {
-        return fmt.Errorf("audio stream is empty")
-    }
-
-    position := p.Streamer.Position()
-    target := position + p.SampleRate.N(
-        time.Duration(seconds)*time.Second,
-    )
-
-    if target < 0 {
-        target = 0
-    }
-    if target >= length {
-        target = length - 1
-    }
-
-    return p.seek(target)
 }
 
 func (p *Player) SeekTo(seconds float64) error {
@@ -233,6 +206,17 @@ func (p *Player) Length() int {
     defer speaker.Unlock()
 
     return p.Streamer.Len()
+}
+
+func (p *Player) Err() error {
+    if p == nil || p.Closed {
+        return nil
+    }
+
+    speaker.Lock()
+    defer speaker.Unlock()
+
+    return p.Streamer.Err()
 }
 
 func (p *Player) Close() error {

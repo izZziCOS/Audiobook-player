@@ -2,6 +2,7 @@ package main
 
 import (
     _ "embed"
+    "os"
 
     "fyne.io/fyne/v2"
 
@@ -13,5 +14,5 @@ var icon []byte
 
 func main() {
     playerUI := ui.NewUI(fyne.NewStaticResource("Icon.png", icon))
-    playerUI.Run()
+    playerUI.Run(os.Args[1:])
 }

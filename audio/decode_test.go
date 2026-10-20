@@ -85,7 +85,9 @@ func TestIsSupported(t *testing.T) {
         "part.flac": true,
         "part.ogg":  true,
         "part.oga":  true,
-        "part.m4b":  false,
+        "part.m4b":  true,
+        "PART.M4A":  true,
+        "part.aac":  false,
         "notes.txt": false,
         "mp3":       false,
     } {
@@ -219,5 +221,22 @@ func TestMonoVorbisDecodesAtTheRightSpeed(t *testing.T) {
         if math.Abs(buffer[i][0]-samples[target+i][0]) > 1e-6 {
             t.Fatalf("after seeking to %d, sample %d is wrong", target, i)
         }
+    }
+}
+
+func TestDuration(t *testing.T) {
+    for _, name := range []string{"speech-16bit-mono.wav", "speech-24bit-stereo.flac", "hello-mono.ogg"} {
+        path := filepath.Join("testdata", name)
+        streamer, format := decodeFile(t, path)
+        want := float64(streamer.Len()) / float64(format.SampleRate)
+
+        got, err := Duration(path)
+        if err != nil || got <= 0 || got != want {
+            t.Errorf("%s: got %v, %v, want %v", name, got, err, want)
+        }
+    }
+
+    if _, err := Duration(filepath.Join("testdata", "missing.mp3")); err == nil {
+        t.Error("expected an error for a missing file")
     }
 }
