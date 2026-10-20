@@ -103,6 +103,8 @@ func (p *Player) next() {
 }
 
 func (p *Player) seekInPart(seconds float64) {
+    p.forgetSleepPosition()
+
     if err := p.audio.SeekTo(seconds); err != nil {
         dialog.ShowError(err, p.window)
         return

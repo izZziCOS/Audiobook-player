@@ -1,12 +1,12 @@
 package nowplaying
 
 import (
-    "github.com/izzzicos/audiobook-player/ui/internal/testbooks"
     "math"
     "path/filepath"
     "testing"
 
     "github.com/izzzicos/audiobook-player/library"
+    "github.com/izzzicos/audiobook-player/ui/internal/testbooks"
 )
 
 func openChapterBook(t *testing.T) *Player {

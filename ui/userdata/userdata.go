@@ -45,8 +45,9 @@ type saved struct {
     Ignored   []string                `json:"ignored,omitempty"`
     Positions map[string]Position     `json:"positions"`
     Durations map[string]PartDuration `json:"durations"`
-    Stats     *stats.Log              `json:"stats"`
-    LastBook  LastBook                `json:"lastBook"`
+    Stats       *stats.Log              `json:"stats"`
+    LastBook    LastBook                `json:"lastBook"`
+    Collections []Collection            `json:"collections,omitempty"`
 }
 
 type Data struct {
@@ -59,6 +60,7 @@ type Data struct {
 
     OnSaveError func(error)
 
+    collections    []Collection
     file           string
     dirty          bool
     saveErrorShown bool
@@ -122,8 +124,9 @@ func (d *Data) collect() saved {
         Library:   d.Library,
         Positions: d.Positions,
         Durations: d.Durations,
-        Stats:     d.Stats,
-        LastBook:  d.LastBook,
+        Stats:       d.Stats,
+        LastBook:    d.LastBook,
+        Collections: d.collections,
     }
 
     for path := range d.Ignored {
@@ -203,6 +206,7 @@ func (d *Data) apply(data saved) {
 
     d.LastBook = data.LastBook
     d.Library = data.Library
+    d.collections = data.Collections
 }
 
 func normalize(data saved) saved {
@@ -239,6 +243,12 @@ func normalize(data saved) saved {
     }
     for i := range data.Ignored {
         data.Ignored[i] = library.Normalize(data.Ignored[i])
+    }
+
+    for i := range data.Collections {
+        for j := range data.Collections[i].Books {
+            data.Collections[i].Books[j] = library.Normalize(data.Collections[i].Books[j])
+        }
     }
 
     if data.LastBook.Folder != "" {

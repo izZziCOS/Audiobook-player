@@ -429,3 +429,26 @@ func TestStartingTidiesDeletedBooks(t *testing.T) {
         t.Fatal("other books and listening statistics should be kept")
     }
 }
+
+func TestCollectionsSurviveARestartAndFollowMovedBooks(t *testing.T) {
+    ui := newTestUI(t)
+    root, hobbit := testbooks.Library(t)
+    testbooks.Backdate(t, root)
+    ui.importer.SetFolder(root)
+
+    ui.data.CreateCollection("For bedtime")
+    ui.data.SetInCollection("For bedtime", hobbit, true)
+
+    moved := filepath.Join(root, "Fantasy", "The_Hobbit")
+    os.MkdirAll(filepath.Dir(moved), 0o755)
+    if err := os.Rename(hobbit, moved); err != nil {
+        t.Fatal(err)
+    }
+    ui.importer.Scan()
+    ui.save()
+
+    restarted := restart(t, ui)
+    if !slices.Equal(restarted.data.Collections(), []string{"For bedtime"}) || !restarted.data.InCollection("For bedtime", moved) {
+        t.Fatalf("the collection and its moved book should come back, got %v", restarted.data.Collections())
+    }
+}

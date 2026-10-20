@@ -50,6 +50,8 @@ func (d *Data) Move(old, newPath string) {
         d.Ignored[newPath] = true
     }
 
+    d.moveInCollections(old, newPath)
+
     d.LastBook.Folder = MovedPath(d.LastBook.Folder, old, newPath)
     d.LastBook.File = MovedPath(d.LastBook.File, old, newPath)
 }

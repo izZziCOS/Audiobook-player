@@ -58,8 +58,7 @@ type Player struct {
     backdropTint   *color.NRGBA
     coverName      string
     chapterIndex   int
-    sleepRemaining time.Duration
-    sleepLastTick  time.Time
+    sleep          sleepState
     metadata       library.Metadata
     chapters       []library.Chapter
     media          mediaControls
@@ -75,6 +74,7 @@ func New(window fyne.Window, prefs fyne.Preferences, data *userdata.Data, picker
         picker: picker,
         async:  async,
         speed:  1.0,
+        sleep:  sleepState{lastPosition: noSleepPosition},
     }
     p.build()
 

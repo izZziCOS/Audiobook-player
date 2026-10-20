@@ -163,6 +163,7 @@ func (s *Shelf) setShelfSort(option string) {
     s.order = option
     s.prefs.SetString(preferenceLibrarySort, option)
     s.sortButton.SetText("Sort: " + option)
+    s.header.Refresh()
     s.arrangeShelf()
 }
 

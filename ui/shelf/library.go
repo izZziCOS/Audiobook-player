@@ -73,7 +73,7 @@ func (s *Shelf) build() fyne.CanvasObject {
     s.count.SizeName = theme.SizeNameCaptionText
     s.count.TextStyle = fyne.TextStyle{Bold: true}
 
-    hint := widget.NewLabel("Click a book to play it · Right-click to remove it")
+    hint := widget.NewLabel("Click a book to play it · Right-click for more")
     hint.SizeName = theme.SizeNameCaptionText
     hint.Importance = widget.LowImportance
     hint.Alignment = fyne.TextAlignTrailing
@@ -112,7 +112,7 @@ func (s *Shelf) build() fyne.CanvasObject {
     filters, sorting := s.buildShelfControls()
 
     s.header = container.NewVBox(
-        container.NewBorder(nil, nil, nil, addButton, s.search),
+        container.NewBorder(nil, nil, s.buildCollectionButton(), addButton, s.search),
         filters,
         container.NewBorder(nil, nil, s.count, sorting, hint),
     )
@@ -142,8 +142,8 @@ func (s *Shelf) newShelfEntry(path string) *shelfEntry {
         func() {
             s.open(entry)
         },
-        func() {
-            s.remove(entry)
+        func() *fyne.Menu {
+            return s.cardMenu(entry)
         },
     )
     entry.card.Title = entry.title
@@ -236,7 +236,13 @@ func (s *Shelf) showShelf() {
     query := s.search.Text
 
     var objects []fyne.CanvasObject
+    total := 0
     for _, entry := range s.entries {
+        if !s.inCollection(entry) {
+            continue
+        }
+
+        total++
         if s.passesFilter(entry) && entry.matches(query) {
             objects = append(objects, entry.card)
         }
@@ -253,12 +259,16 @@ func (s *Shelf) showShelf() {
         s.header.Show()
     }
 
-    s.count.SetText(bookCount(len(objects), len(s.entries)))
+    s.count.SetText(bookCount(len(objects), total))
 
-    if len(s.entries) > 0 && len(objects) == 0 {
+    switch {
+    case len(s.entries) > 0 && total == 0 && s.collection != "":
+        s.noMatches.SetText(emptyCollectionText(s.collection))
+        s.noMatches.Show()
+    case len(s.entries) > 0 && len(objects) == 0:
         s.noMatches.SetText(noMatchesText(s.filter, query))
         s.noMatches.Show()
-    } else {
+    default:
         s.noMatches.Hide()
     }
 }
@@ -461,6 +471,8 @@ func (s *Shelf) applyShelfDurations(
 }
 
 func (s *Shelf) AddFrom(roots []string) {
+    collection := s.collection
+
     s.async(func() {
         var found []string
         var failures []error
@@ -487,6 +499,8 @@ func (s *Shelf) AddFrom(roots []string) {
             }
 
             s.Add(found)
+            s.addToCollection(collection, found)
+            s.showShelf()
         })
     })
 }

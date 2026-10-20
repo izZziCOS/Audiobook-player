@@ -1,13 +1,13 @@
 package nowplaying
 
 import (
-    "github.com/izzzicos/audiobook-player/ui/internal/testbooks"
     "math"
     "testing"
 
     "fyne.io/fyne/v2/test"
 
     "github.com/izzzicos/audiobook-player/audio"
+    "github.com/izzzicos/audiobook-player/ui/internal/testbooks"
     "github.com/izzzicos/audiobook-player/ui/kit"
     "github.com/izzzicos/audiobook-player/ui/userdata"
 )

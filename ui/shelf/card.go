@@ -26,13 +26,13 @@ type bookCard struct {
     Progress  float64
     Thumbnail image.Image
     OnTapped  func()
-    OnRemove  func()
+    Menu      func() *fyne.Menu
 
     hovered bool
 }
 
-func newBookCard(onTapped, onRemove func()) *bookCard {
-    card := &bookCard{OnTapped: onTapped, OnRemove: onRemove}
+func newBookCard(onTapped func(), menu func() *fyne.Menu) *bookCard {
+    card := &bookCard{OnTapped: onTapped, Menu: menu}
     card.ExtendBaseWidget(card)
 
     return card
@@ -45,13 +45,12 @@ func (c *bookCard) Tapped(*fyne.PointEvent) {
 }
 
 func (c *bookCard) TappedSecondary(event *fyne.PointEvent) {
-    menu := fyne.NewMenu("",
-        fyne.NewMenuItem("Play", c.OnTapped),
-        fyne.NewMenuItem("Remove from library", c.OnRemove),
-    )
+    if c.Menu == nil {
+        return
+    }
 
     widget.ShowPopUpMenuAtPosition(
-        menu,
+        c.Menu(),
         fyne.CurrentApp().Driver().CanvasForObject(c),
         event.AbsolutePosition,
     )

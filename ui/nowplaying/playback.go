@@ -56,6 +56,7 @@ func (p *Player) loadAudio(path string) bool {
         })
     }
     p.audio = player
+    p.forgetSleepPosition()
 
     p.metadata = library.ReadMetadata(path)
     p.chapters = library.ReadChapters(path)
@@ -114,6 +115,8 @@ func (p *Player) jumpTo(seconds float64) {
 }
 
 func (p *Player) Seek(seconds float64) error {
+    p.forgetSleepPosition()
+
     if p.book == nil || !p.book.HasDurations() {
         return p.audio.SeekTo(seconds)
     }

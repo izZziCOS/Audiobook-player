@@ -40,6 +40,11 @@ func (d *Data) PlanTidy() TidyPlan {
     for book := range d.Ignored {
         seen[book] = true
     }
+    for _, collection := range d.collections {
+        for _, book := range collection.Books {
+            seen[book] = true
+        }
+    }
     for book := range seen {
         if !plan.library[book] {
             plan.removed = append(plan.removed, book)
@@ -128,6 +133,9 @@ func (d *Data) Forget(leftovers Leftovers) {
         }
         if d.Ignored[book] {
             delete(d.Ignored, book)
+            changed = true
+        }
+        if d.forgetInCollections(book) {
             changed = true
         }
     }

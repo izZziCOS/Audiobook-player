@@ -37,12 +37,14 @@ type Shelf struct {
     noMatches     *widget.Label
     count         *widget.Label
     header        *fyne.Container
-    filterButtons map[string]*widget.Button
-    sortButton    *widget.Button
+    filterButtons    map[string]*widget.Button
+    sortButton       *widget.Button
+    collectionButton *widget.Button
 
     entries        []*shelfEntry
     order          string
     filter         string
+    collection     string
     arrangePending bool
 }
 

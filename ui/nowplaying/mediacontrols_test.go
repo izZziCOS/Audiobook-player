@@ -1,13 +1,13 @@
 package nowplaying
 
 import (
-    "github.com/izzzicos/audiobook-player/ui/internal/testbooks"
     "path/filepath"
     "testing"
     "time"
 
     "github.com/izzzicos/audiobook-player/audio"
     "github.com/izzzicos/audiobook-player/media"
+    "github.com/izzzicos/audiobook-player/ui/internal/testbooks"
 )
 
 type fakeMedia struct {

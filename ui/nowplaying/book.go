@@ -128,14 +128,22 @@ func (p *Player) handlePartEnd() {
         return
     }
 
+    stop := p.sleepsAtPartEnd()
+
     if p.book != nil && p.book.HasPart(p.book.Index+1) {
-        p.goToPart(p.book.Index+1, true)
+        p.goToPart(p.book.Index+1, !stop)
+        if stop {
+            p.fallAsleep()
+        }
         return
     }
 
     p.setPlaying(false)
     p.rewindBook()
     p.markFinished()
+    if stop {
+        p.fallAsleep()
+    }
 }
 
 func (p *Player) rewindBook() {

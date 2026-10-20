@@ -226,6 +226,25 @@ func writeDemoListening(log *stats.Log, now time.Time) {
     }
 }
 
+var demoCollections = map[string][]string{
+    "Currently reading": {"Frankenstein", "Pride and Prejudice", "Moby-Dick"},
+    "Classics":          {"Frankenstein", "Pride and Prejudice", "Moby-Dick", "Dracula", "Little Women"},
+    "For bedtime":       {"Little Women", "Treasure Island", "The Adventures of Sherlock Holmes", "The Time Machine"},
+}
+
+func writeDemoCollections(data *userdata.Data, root string) {
+    for name, titles := range demoCollections {
+        data.CreateCollection(name)
+        for _, title := range titles {
+            for _, book := range demoBooks {
+                if book.title == title {
+                    data.SetInCollection(name, filepath.Join(root, book.author, book.title), true)
+                }
+            }
+        }
+    }
+}
+
 func demoUI(t *testing.T, variant fyne.ThemeVariant) *UI {
     t.Helper()
 
@@ -249,6 +268,7 @@ func demoUI(t *testing.T, variant fyne.ThemeVariant) *UI {
     now := time.Now()
     root, playing := writeDemoLibrary(t, ui.data, now)
     writeDemoListening(ui.data.Stats, now)
+    writeDemoCollections(ui.data, root)
 
     ui.build()
     window.SetContent(ui.content)
@@ -282,18 +302,22 @@ func TestScreenshots(t *testing.T) {
         theme fyne.ThemeVariant
         tabs  []string
     }{
-        {"light", theme.VariantLight, []string{"now-playing", "library"}},
+        {"light", theme.VariantLight, []string{"now-playing", "library", "collection"}},
         {"dark", theme.VariantDark, []string{"now-playing", "statistics"}},
     } {
         ui := demoUI(t, variant.theme)
         tabs := map[string]*container.TabItem{
             "now-playing": ui.playerTab,
             "library":     ui.libraryTab,
+            "collection":  ui.libraryTab,
             "statistics":  ui.statsTab,
         }
 
         for _, name := range variant.tabs {
             ui.tabs.Select(tabs[name])
+            if name == "collection" {
+                ui.shelf.ShowCollection("For bedtime")
+            }
             saveScreenshot(t, ui, name+"-"+variant.name)
         }
         ui.App.Quit()

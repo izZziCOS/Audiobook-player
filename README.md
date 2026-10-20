@@ -17,10 +17,11 @@ A small desktop audiobook player for macOS and Windows (Linux works too), writte
 - Shows the book title, author and part names from the files' tags (ID3, FLAC and Vorbis comments), falling back to file and folder names.
 - **Speed from 0.5x to 2.0x** in 0.1x steps, without changing the pitch of the voice.
 - Skip 30 seconds back or forward. The remaining time takes the playback speed into account.
-- **Sleep timer**: the moon button next to the speed stops playback after 5 to 90 minutes. It only counts down while a book is playing, shows the time left, and fades the volume out over the last 10 seconds before pausing.
+- **Sleep timer**: the moon button next to the speed stops playback after 5 to 90 minutes, at the **end of the chapter** (books with chapters) or at the **end of this part** (books of several parts). It shows the time left, taking the playback speed into account, only counts down while a book is playing, and fades the volume out over the last 10 seconds before pausing. Stopping at the end of a chapter or part leaves the book at the start of the next one, so pressing play carries straight on. If you skip into another chapter, the timer stops at the end of that one instead.
 - Shows cover art: an image with the same name as the audio file, else artwork embedded in the file, else `cover`, `folder` or `front` `.jpg`/`.png`, else the first image in the folder.
 - A warm light and dark look. It follows your system setting, or you can choose Light or Dark in **Settings**. The Now Playing screen is tinted with the colours of the book's cover. On Windows the title bar turns light or dark to match.
 - **Statistics**: total listening time, this week, daily average, books finished, listening streaks and average speed, with daily and weekly charts, a listening calendar and your most-listened books.
+- **Collections** of your own, such as Currently reading, Classics or For bedtime. See [Collections](#collections).
 - **Library folder**: choose a folder in **Settings** and the audiobooks in it are added to the library automatically, including ones you copy in later.
 - **Media keys and system controls**: the play/pause and skip keys on your keyboard, headset buttons, and the media controls in Windows (taskbar, lock screen, the volume pop-up) and macOS (Control Center, the lock screen, AirPods) control the player and show the book's title and cover. See [Media keys](#media-keys-and-system-controls).
 - Uses the native file picker on macOS and Windows. You can also drag a file or folder onto the window.
@@ -44,7 +45,8 @@ Chapters are read from M4B and M4A files, from either a QuickTime chapter track 
 The **Library** tab shows every book you've added as a card with its cover, title, author and progress (for example `43% · 5h 12m left`, or `Finished`). The books you listened to most recently come first, unless you choose another order.
 
 <p align="center">
-  <img src="docs/screenshots/library-light.png" width="520" alt="The Library tab: a search box, Add books, the All, In progress, Not started and Finished filters, Sort: Recently played, and cards for Frankenstein, Pride and Prejudice, Moby-Dick and other books showing their author and how far through each one you are">
+  <img src="docs/screenshots/library-light.png" width="380" alt="The Library tab showing All books: a search box, Add books, the All, In progress, Not started and Finished filters, Sort: Recently played, and cards for Frankenstein, Pride and Prejudice, Moby-Dick and other books showing their author and how far through each one you are">
+  <img src="docs/screenshots/collection-light.png" width="380" alt="The Library tab with the For bedtime collection open, showing its four books: The Time Machine, Treasure Island, The Adventures of Sherlock Holmes and Little Women">
 </p>
 
 - **Add books** lets you choose one or more folders. Every audiobook inside them is added, however deeply it is nested:
@@ -63,6 +65,16 @@ The **Library** tab shows every book you've added as a card with its cover, titl
 
   The order you choose is remembered. The filter always starts at **All**, so books never seem to be missing when you open the app.
 - A book whose files have been moved, or that is on a drive that isn't connected, shows `Not found`.
+
+#### Collections
+
+Collections are your own groups of books, such as **Currently reading**, **Classics** or **For bedtime**. A book can be in as many collections as you like, and its files stay where they are.
+
+- The button at the top left of the Library shows where you are: **All books** or a collection. Its menu switches between them, makes a **New collection…**, and renames or deletes the collection you're in. Deleting a collection keeps its books in your library.
+- Right-click a book and choose **Add to collection** to tick or untick the collections it's in, or to make a new one with it in. Inside a collection, **Remove from "Classics"** takes it out of just that collection.
+- **Add books**, and dropping folders onto the Library, add the new books to the collection that's open.
+- Search, the **In progress / Not started / Finished** filters and **Sort** all work inside a collection.
+- Collections are saved in `library.json`, follow books that move, and drop books that have been deleted from the disk.
 
 ### Statistics
 
@@ -255,7 +267,7 @@ ui/              the window: creates the parts below and connects them
   app.go           start-up, loading and saving, opening files from the command line
   window.go        the tabs, drag and drop, keyboard shortcuts, the timers
   nowplaying/      the Now Playing tab: playback, parts and chapters, sleep timer, media keys, Open
-  shelf/           the Library tab: cards, search, sort and filter, adding and removing, moved books
+  shelf/           the Library tab: cards, collections, search, sort and filter, adding and removing, moved books
   autoimport/      the library folder: checking it for new books, its section in Settings
   statistics/      the Statistics tab and its charts
   settings/        the Settings tab: Light / Dark and the Windows title bar
