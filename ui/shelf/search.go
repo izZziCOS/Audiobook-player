@@ -39,6 +39,8 @@ func (entry *shelfEntry) matches(query string) bool {
         query,
         entry.title,
         entry.author,
+        entry.original.Title,
+        entry.original.Author,
         filepath.Base(entry.path),
         filepath.Base(filepath.Dir(entry.path)),
     )

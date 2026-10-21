@@ -1,6 +1,7 @@
 package shelf
 
 import (
+    "cmp"
     "errors"
     "fmt"
     "image"
@@ -17,6 +18,7 @@ import (
     "fyne.io/fyne/v2/widget"
 
     "github.com/izzzicos/audiobook-player/library"
+    "github.com/izzzicos/audiobook-player/ui/details"
     "github.com/izzzicos/audiobook-player/ui/kit"
     "github.com/izzzicos/audiobook-player/ui/userdata"
 )
@@ -28,7 +30,12 @@ type shelfEntry struct {
     book        *library.Book
     title       string
     author      string
+    original    details.Original
     missing     bool
+    unavailable bool
+    offline     bool
+    network     bool
+    outOfDate   bool
     fingerprint *library.Fingerprint
     card        *bookCard
 }
@@ -38,7 +45,11 @@ type shelfInfo struct {
     title       string
     author      string
     thumbnail   image.Image
+    original    details.Original
     missing     bool
+    unavailable bool
+    offline     bool
+    network     bool
     fingerprint *library.Fingerprint
     movedTo     string
 }
@@ -72,6 +83,10 @@ func (s *Shelf) build() fyne.CanvasObject {
     s.count = widget.NewLabel("")
     s.count.SizeName = theme.SizeNameCaptionText
     s.count.TextStyle = fyne.TextStyle{Bold: true}
+
+    s.duplicatesButton = widget.NewButtonWithIcon("", theme.WarningIcon(), s.showDuplicates)
+    s.duplicatesButton.Importance = widget.WarningImportance
+    s.duplicatesButton.Hide()
 
     hint := widget.NewLabel("Click a book to play it · Right-click for more")
     hint.SizeName = theme.SizeNameCaptionText
@@ -114,7 +129,7 @@ func (s *Shelf) build() fyne.CanvasObject {
     s.header = container.NewVBox(
         container.NewBorder(nil, nil, s.buildCollectionButton(), addButton, s.search),
         filters,
-        container.NewBorder(nil, nil, s.count, sorting, hint),
+        container.NewBorder(nil, nil, container.NewHBox(s.count, s.duplicatesButton), sorting, hint),
     )
 
     return container.New(
@@ -137,6 +152,9 @@ func (s *Shelf) newShelfEntry(path string) *shelfEntry {
     entry := &shelfEntry{
         path:  path,
         title: library.CleanName(filepath.Base(path)),
+    }
+    if edit := s.data.Edit(path); edit.Title != "" {
+        entry.title = edit.Title
     }
     entry.card = newBookCard(
         func() {
@@ -163,7 +181,7 @@ func (s *Shelf) find(path string) *shelfEntry {
 
 func (s *Shelf) Add(paths []string) {
     s.data.Unignore(cleanPaths(paths))
-    s.Import(paths)
+    s.importBooks(paths, true, nil)
 }
 
 func cleanPaths(paths []string) []string {
@@ -175,37 +193,8 @@ func cleanPaths(paths []string) []string {
     return cleaned
 }
 
-func (s *Shelf) Import(paths []string) {
-    moved := s.movedBooks()
-
-    var changed []*shelfEntry
-    for _, path := range paths {
-        path = library.Normalize(path)
-        if s.find(path) != nil {
-            continue
-        }
-
-        if len(moved) > 0 {
-            if entry := matchMoved(moved, path); entry != nil {
-                s.relink(entry, path)
-                moved = slices.DeleteFunc(moved, func(other *shelfEntry) bool { return other == entry })
-                changed = append(changed, entry)
-                continue
-            }
-        }
-
-        entry := s.newShelfEntry(path)
-        s.entries = append(s.entries, entry)
-        changed = append(changed, entry)
-    }
-
-    if len(changed) == 0 {
-        return
-    }
-
-    s.save()
-    s.Refresh()
-    s.loadShelfInfo(changed)
+func (s *Shelf) Import(paths []string, done func(ImportResult)) {
+    s.importBooks(paths, false, done)
 }
 
 func (s *Shelf) remove(entry *shelfEntry) {
@@ -213,6 +202,7 @@ func (s *Shelf) remove(entry *shelfEntry) {
         return other == entry
     })
     s.data.Ignore(entry.path)
+    s.Offline.Remove(entry.path)
 
     s.save()
     s.Refresh()
@@ -260,6 +250,7 @@ func (s *Shelf) showShelf() {
     }
 
     s.count.SetText(bookCount(len(objects), total))
+    s.updateDuplicates()
 
     switch {
     case len(s.entries) > 0 && total == 0 && s.collection != "":
@@ -293,10 +284,18 @@ func (s *Shelf) updateCard(entry *shelfEntry) {
         entry.card.Author = fmt.Sprintf("%d parts", len(entry.book.Parts))
     }
     entry.card.Progress, entry.card.Status = s.shelfProgress(entry)
+    entry.card.Status = s.withDownload(entry, entry.card.Status)
+    entry.card.Rating = ""
+    if online, found := s.data.Online(entry.path); found {
+        entry.card.Rating = online.Edition.Stars()
+    }
     entry.card.Refresh()
 }
 
 func (s *Shelf) shelfProgress(entry *shelfEntry) (float64, string) {
+    if entry.missing && entry.unavailable {
+        return 0, "Not connected"
+    }
     if entry.missing {
         return 0, "Not found"
     }
@@ -342,21 +341,28 @@ func (s *Shelf) loadShelfInfo(entries []*shelfEntry) {
     entries = slices.Clone(entries)
     paths := make([]string, len(entries))
     fingerprints := make([]*library.Fingerprint, len(entries))
+    edits := make([]userdata.BookEdit, len(entries))
+    coverFiles := make([]string, len(entries))
+    locals := make([]*library.Book, len(entries))
     for i, entry := range entries {
         paths[i], fingerprints[i] = entry.path, entry.fingerprint
+        edits[i], coverFiles[i] = s.data.Edit(entry.path), s.data.CoverFile(entry.path)
+        locals[i] = s.Offline.Local(entry.path)
     }
     cache := maps.Clone(s.data.Durations)
 
     s.async(func() {
         books := make([]*library.Book, len(entries))
         for i, entry := range entries {
-            info := readShelfInfo(paths[i], fingerprints[i])
+            info := readShelfInfo(paths[i], fingerprints[i], s.cache, locals[i])
+            info.applyEdit(edits[i], coverFiles[i], s.cache)
             books[i] = info.book
 
             fyne.Do(func() {
                 s.applyShelfInfo(entry, info)
             })
         }
+        s.cache.save()
 
         for i, book := range books {
             if book == nil {
@@ -376,33 +382,65 @@ func (s *Shelf) loadShelfInfo(entries []*shelfEntry) {
     })
 }
 
-func readShelfInfo(path string, known *library.Fingerprint) shelfInfo {
+func readShelfInfo(path string, known *library.Fingerprint, cache *shelfCache, local *library.Book) shelfInfo {
     book, err := library.OpenBook(path)
-    if err != nil {
+    offline := false
+    switch {
+    case err == nil:
+    case local != nil:
+        book, offline = local, true
+    default:
         if moved := locateMoved(path, known); moved != "" {
-            info := readShelfInfo(moved, nil)
+            info := readShelfInfo(moved, nil, cache, nil)
             info.movedTo = moved
             return info
         }
-        return shelfInfo{missing: true}
+        return shelfInfo{missing: true, unavailable: library.Unavailable(path)}
     }
 
-    metadata := library.ReadMetadata(book.Parts[0])
-    info := shelfInfo{
-        book:   book,
-        title:  book.Title(metadata),
-        author: metadata.Artist,
+    info := shelfInfo{book: book, offline: offline, network: offline || library.IsNetwork(path)}
+    if original, found := cache.bookInfo(path, book); found {
+        info.original = original
+    } else {
+        original, coverFile := readOriginal(book)
+        info.original = original
+        cache.rememberBook(path, book, original, coverFile)
     }
 
-    if cover, _ := library.FindCover(book.Parts[0], metadata.Picture); cover != nil {
-        info.thumbnail, _ = library.Thumbnail(cover.Data, thumbnailSide)
-    }
-
-    if fingerprint, err := library.FingerprintOf(path); err == nil {
-        info.fingerprint = &fingerprint
+    if !offline {
+        if fingerprint, err := library.FingerprintOfBook(book); err == nil {
+            info.fingerprint = &fingerprint
+        }
     }
 
     return info
+}
+
+func readOriginal(book *library.Book) (details.Original, string) {
+    first := book.PlayablePart(0)
+    metadata := library.ReadMetadata(first)
+    original := details.Original{
+        Title:  book.Title(metadata),
+        Author: metadata.Artist,
+    }
+
+    cover, _ := library.FindCover(first, metadata.Picture)
+    if cover == nil {
+        return original, ""
+    }
+
+    original.Cover, _ = library.Thumbnail(cover.Data, thumbnailSide)
+    return original, cover.File()
+}
+
+func (info *shelfInfo) applyEdit(edit userdata.BookEdit, coverFile string, cache *shelfCache) {
+    info.title = cmp.Or(edit.Title, info.original.Title)
+    info.author = cmp.Or(edit.Author, info.original.Author)
+    info.thumbnail = info.original.Cover
+
+    if custom := cache.customThumbnail(coverFile); custom != nil {
+        info.thumbnail = custom
+    }
 }
 
 func measureBook(book *library.Book, cache map[string]userdata.PartDuration) ([]float64, map[string]userdata.PartDuration, bool) {
@@ -410,12 +448,12 @@ func measureBook(book *library.Book, cache map[string]userdata.PartDuration) ([]
     measured := map[string]userdata.PartDuration{}
 
     for i, part := range book.Parts {
-        if seconds, found := userdata.LookupDuration(cache, part); found {
+        if seconds, found := userdata.LookupDurationOf(cache, part, book.PlayablePart(i)); found {
             durations[i] = seconds
             continue
         }
 
-        entry, err := userdata.MeasureDuration(part)
+        entry, err := userdata.MeasureDuration(book.PlayablePart(i))
         if err != nil {
             return nil, nil, false
         }
@@ -440,10 +478,15 @@ func (s *Shelf) applyShelfInfo(entry *shelfEntry, info shelfInfo) {
 
     entry.book = info.book
     entry.missing = info.missing
+    entry.unavailable = info.unavailable
+    entry.offline = info.offline
+    entry.network = info.network
+    entry.outOfDate = !info.offline && s.Offline.OutOfDate(entry.path, info.fingerprint)
     if info.title != "" {
         entry.title = info.title
     }
     entry.author = info.author
+    entry.original = info.original
     entry.card.Thumbnail = info.thumbnail
 
     s.updateCard(entry)
@@ -498,9 +541,21 @@ func (s *Shelf) AddFrom(roots []string) {
                 return
             }
 
-            s.Add(found)
-            s.addToCollection(collection, found)
-            s.showShelf()
+            s.data.Unignore(cleanPaths(found))
+            s.importBooks(found, false, func(result ImportResult) {
+                var inLibrary []string
+                for _, path := range found {
+                    if book := result.InLibrary(path); book != "" {
+                        inLibrary = append(inLibrary, book)
+                    }
+                }
+                s.addToCollection(collection, inLibrary)
+                s.showShelf()
+
+                if len(result.Copies) > 0 {
+                    dialog.ShowInformation("Already in your library", copiesMessage(result.Copies), s.window)
+                }
+            })
         })
     })
 }

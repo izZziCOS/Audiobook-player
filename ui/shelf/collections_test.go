@@ -73,7 +73,7 @@ func TestCollectionsInTheLibrary(t *testing.T) {
 
     s.ShowCollection("")
     menu := s.cardMenu(s.find(hobbit))
-    if want := []string{"Play", "Add to collection", "Remove from library"}; !slices.Equal(labels(menu), want) {
+    if want := []string{"Play", "About this book…", "Edit details…", "Add to collection", "Remove from library…"}; !slices.Equal(labels(menu), want) {
         t.Fatalf("in All books a card offers %v, want %v", labels(menu), want)
     }
     choice := menuItem(t, menuItem(t, menu, "Add to collection").ChildMenu, "Classics")
@@ -236,5 +236,34 @@ func TestHeaderButtonsFitTheirText(t *testing.T) {
     if !fits(s.sortButton) || !fits(s.collectionButton) {
         t.Fatalf("a longer label should widen its button: sort %v of %v, collection %v of %v",
             s.sortButton.Size().Width, s.sortButton.MinSize().Width, s.collectionButton.Size().Width, s.collectionButton.MinSize().Width)
+    }
+}
+
+func TestRemovingABookAsksFirst(t *testing.T) {
+    s, _ := newTestShelf(t)
+    root, hobbit := testbooks.Library(t)
+    s.AddFrom([]string{root})
+
+    button := func(label string) *widget.Button {
+        return overlayObject(s, func(button *widget.Button) bool { return button.Text == label })
+    }
+
+    menuItem(t, s.cardMenu(s.find(hobbit)), "Remove from library…").Action()
+    if !s.Contains(hobbit) {
+        t.Fatal("the book should stay until the removal is confirmed")
+    }
+    cancel := button("Cancel")
+    if cancel == nil || button("Remove") == nil {
+        t.Fatal("expected a dialog with Cancel and Remove")
+    }
+    test.Tap(cancel)
+    if !s.Contains(hobbit) || !slices.Contains(pathsOnDisk(t, s), hobbit) {
+        t.Fatal("Cancel should keep the book")
+    }
+
+    menuItem(t, s.cardMenu(s.find(hobbit)), "Remove from library…").Action()
+    test.Tap(button("Remove"))
+    if s.Contains(hobbit) || slices.Contains(pathsOnDisk(t, s), hobbit) {
+        t.Fatal("Remove should take the book out of the library")
     }
 }

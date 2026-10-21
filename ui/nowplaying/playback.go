@@ -16,7 +16,7 @@ import (
         "github.com/izzzicos/audiobook-player/ui/kit"
     )
 
-func (p *Player) loadAudio(path string) bool {
+func (p *Player) loadAudio(key, path string) bool {
     file, err := os.Open(path)
     if err != nil {
         dialog.ShowError(err, p.window)
@@ -46,7 +46,7 @@ func (p *Player) loadAudio(path string) bool {
 
     player := audio.NewPlayer(
         format.SampleRate,
-        streamer,
+        audio.NewBuffered(streamer, format.SampleRate),
     )
     player.OnEnd = func() {
         fyne.Do(func() {
@@ -58,9 +58,10 @@ func (p *Player) loadAudio(path string) bool {
     p.audio = player
     p.forgetSleepPosition()
 
-    p.metadata = library.ReadMetadata(path)
+    p.tags = library.ReadMetadata(path)
     p.chapters = library.ReadChapters(path)
-    p.updateCover(path, p.metadata.Picture)
+    p.foundCover, _ = library.FindCover(path, p.tags.Picture)
+    p.applyEdit(key)
 
     p.setPlaying(false)
     p.audio.SetVolume(p.volume.Value)
@@ -85,7 +86,11 @@ func (p *Player) TogglePlay() {
 }
 
 func (p *Player) setPlaying(playing bool) {
+    paused := p.playing && !playing
     p.playing = playing
+    if paused && p.OnPaused != nil {
+        defer p.OnPaused()
+    }
 
     if playing {
         p.playButton.SetIcon(theme.MediaPauseIcon())

@@ -20,9 +20,10 @@ const (
     sortTitle    = "Title"
     sortAuthor   = "Author"
     sortProgress = "Progress"
+    sortRating   = "Rating"
 )
 
-var sortOptions = []string{sortRecent, sortTitle, sortAuthor, sortProgress}
+var sortOptions = []string{sortRecent, sortTitle, sortAuthor, sortProgress, sortRating}
 
 const (
     showAll        = "All"
@@ -123,6 +124,25 @@ func (s *Shelf) sortShelf() {
             return cmp.Or(
                 cmp.Compare(states[a], states[b]),
                 cmp.Compare(fractions[b], fractions[a]),
+                byTitle(a, b),
+            )
+        }
+    case sortRating:
+        trust := map[*shelfEntry]int{}
+        ratings := map[*shelfEntry]float64{}
+        for _, entry := range s.entries {
+            if details, found := s.data.Online(entry.path); found && details.Edition.Rated() {
+                trust[entry] = 2
+                if details.Edition.FewRatings() {
+                    trust[entry] = 1
+                }
+                ratings[entry] = details.Edition.Rating
+            }
+        }
+        order = func(a, b *shelfEntry) int {
+            return cmp.Or(
+                cmp.Compare(trust[b], trust[a]),
+                cmp.Compare(ratings[b], ratings[a]),
                 byTitle(a, b),
             )
         }

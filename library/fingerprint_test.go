@@ -104,3 +104,20 @@ func TestWithin(t *testing.T) {
         }
     }
 }
+
+func TestSameContents(t *testing.T) {
+    hobbit := Fingerprint{Name: "The_Hobbit", Parts: []PartPrint{{"1.mp3", 10}, {"2.mp3", 20}}}
+    copied := Fingerprint{Name: "Hobbit (copy)", Parts: []PartPrint{{"2.mp3", 20}, {"1.mp3", 10}}}
+    trimmed := Fingerprint{Name: "The_Hobbit", Parts: []PartPrint{{"1.mp3", 10}}}
+    resized := Fingerprint{Name: "The_Hobbit", Parts: []PartPrint{{"1.mp3", 10}, {"2.mp3", 21}}}
+
+    if !hobbit.SameContents(copied) {
+        t.Fatal("a renamed copy with the same files should match")
+    }
+    if hobbit.SameContents(trimmed) || hobbit.SameContents(resized) {
+        t.Fatal("books with different files shouldn't match")
+    }
+    if (Fingerprint{}).SameContents(Fingerprint{}) {
+        t.Fatal("empty fingerprints never match")
+    }
+}

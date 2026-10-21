@@ -2,11 +2,12 @@ package library
 
 import (
     "bytes"
+    "errors"
     "fmt"
     "image"
     "image/color"
     _ "image/gif"
-    _ "image/jpeg"
+    "image/jpeg"
     _ "image/png"
     "os"
     "path/filepath"
@@ -16,6 +17,13 @@ import (
     "golang.org/x/image/draw"
     _ "golang.org/x/image/webp"
 )
+
+const (
+    customCoverSide = 1200
+    embeddedSuffix  = "#cover"
+)
+
+var ImageExtensions = []string{".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"}
 
 type Cover struct {
     Name string
@@ -48,7 +56,7 @@ func FindCover(audioPath string, embedded []byte) (*Cover, error) {
     }
 
     if isDecodableImage(embedded) {
-        return &Cover{Name: audioPath + "#cover", Data: embedded}, nil
+        return &Cover{Name: audioPath + embeddedSuffix, Data: embedded}, nil
     }
 
     preferred := []string{
@@ -80,6 +88,14 @@ func FindCover(audioPath string, embedded []byte) (*Cover, error) {
     return nil, nil
 }
 
+func (c *Cover) File() string {
+    if strings.HasSuffix(c.Name, embeddedSuffix) {
+        return ""
+    }
+
+    return c.Name
+}
+
 func Thumbnail(data []byte, side int) (image.Image, error) {
     source, _, err := image.Decode(bytes.NewReader(data))
     if err != nil {
@@ -101,6 +117,28 @@ func Thumbnail(data []byte, side int) (image.Image, error) {
     draw.CatmullRom.Scale(thumbnail, thumbnail.Bounds(), source, bounds, draw.Src, nil)
 
     return thumbnail, nil
+}
+
+func PrepareCover(data []byte) ([]byte, error) {
+    if !isDecodableImage(data) {
+        return nil, errors.New("this file isn't an image the app can read; choose a JPEG, PNG, GIF, BMP or WebP image")
+    }
+
+    scaled, err := Thumbnail(data, customCoverSide)
+    if err != nil {
+        return nil, fmt.Errorf("reading the image: %w", err)
+    }
+
+    flattened := image.NewRGBA(scaled.Bounds())
+    draw.Draw(flattened, flattened.Bounds(), image.White, image.Point{}, draw.Src)
+    draw.Draw(flattened, flattened.Bounds(), scaled, scaled.Bounds().Min, draw.Over)
+
+    var encoded bytes.Buffer
+    if err := jpeg.Encode(&encoded, flattened, &jpeg.Options{Quality: 90}); err != nil {
+        return nil, fmt.Errorf("saving the image: %w", err)
+    }
+
+    return encoded.Bytes(), nil
 }
 
 func AverageColor(data []byte) (color.NRGBA, bool) {

@@ -15,6 +15,8 @@ A small desktop audiobook player for macOS and Windows (Linux works too), writte
 - **Chapters in M4B and M4A files**: ⏮ / ⏭ jump between chapters, a **Chapters** list shows each chapter with its start time, and the current chapter's title is shown while you listen.
 - **Remembers your place in every book**, and resumes the last one when you reopen the app.
 - Shows the book title, author and part names from the files' tags (ID3, FLAC and Vorbis comments), falling back to file and folder names.
+- **Ratings and descriptions from Audible**, if you turn them on: each book's rating with how many people rated it, its description, narrator and release date. See [About this book](#about-this-book).
+- **Edit details**: correct a book's title or author, or give it a cover image of your own, without renaming or retagging any files. See [Editing a book's details](#editing-a-books-details).
 - **Speed from 0.5x to 2.0x** in 0.1x steps, without changing the pitch of the voice.
 - Skip 30 seconds back or forward. The remaining time takes the playback speed into account.
 - **Sleep timer**: the moon button next to the speed stops playback after 5 to 90 minutes, at the **end of the chapter** (books with chapters) or at the **end of this part** (books of several parts). It shows the time left, taking the playback speed into account, only counts down while a book is playing, and fades the volume out over the last 10 seconds before pausing. Stopping at the end of a chapter or part leaves the book at the start of the next one, so pressing play carries straight on. If you skip into another chapter, the timer stops at the end of that one instead.
@@ -53,18 +55,51 @@ The **Library** tab shows every book you've added as a card with its cover, titl
   - a folder of audio files is one book, and its files are the book's parts;
   - `.m4b` files are always books of their own, so a folder of `.m4b` files gives one book per file.
 - You can also drop folders or files onto the Library tab.
-- Any book you open with **Open file** or **Open folder** is added automatically.
-- Click a book to carry on from where you stopped. Right-click a book to remove it from the library; this doesn't touch the files.
+- Any book you open with **Open file** or **Open folder** is added automatically. Opening one part of a book that's already in your library opens that book at that part.
+- Each book is only added once, however you reach it. See [Duplicates](#duplicates).
+- Click a book to carry on from where you stopped. Right-click a book to edit its details or to remove it from the library; neither touches the files. **Remove from library…** asks first, so a stray click can't take a book away.
 - Type in the search box (or press ⌘F on a Mac, Ctrl+F elsewhere) to find a book by its title, author, or file or folder name. Upper and lower case and accents don't matter, so `bronte` finds *Brontë*, and every word you type has to match.
 - **All**, **In progress**, **Not started** and **Finished** above the books show only the books in that state. They work together with the search box, so **Finished** plus `tolkien` shows the Tolkien books you've finished.
 - **Sort** orders the books by:
   - **Recently played**: the last book you listened to first;
   - **Title**: A to Z, ignoring case and accents, with `Book 2` before `Book 10`;
   - **Author**: A to Z by author, then by title. Books without an author come last;
-  - **Progress**: books in progress first, furthest along first, then books you haven't started, then finished ones.
+  - **Progress**: books in progress first, furthest along first, then books you haven't started, then finished ones;
+  - **Rating**: highest Audible rating first. Books rated by fewer than 100 people come after the others, so a 5.0 from three people doesn't top the list, and books without a rating come last.
 
   The order you choose is remembered. The filter always starts at **All**, so books never seem to be missing when you open the app.
-- A book whose files have been moved, or that is on a drive that isn't connected, shows `Not found`.
+- A book whose files have been moved or deleted shows `Not found`. A book on a drive or server that isn't connected, or isn't responding, shows `Not connected` and keeps your place, and it's picked up again when you come back to the Library once the drive or server is back.
+
+#### Duplicates
+
+Adding folders that overlap, such as `Audiobooks` and then `Audiobooks/Tolkien`, or the same folder through a shortcut or link, never puts a book in the library twice:
+
+- A book reached by another path, or a single part of a book that's already in the library, isn't added again.
+- If you opened one part of a book on its own and then add the whole folder, the part is folded into the book, along with your place, listening time, collections and edited details.
+- A copy of a book that's already in your library from another folder (the same file names and sizes) isn't added by **Add books**, by dropping it on the Library, or by the library folder. The app tells you, and the library folder's status counts the skipped copies. If you added the book to a collection while doing this, the copy already in your library goes into the collection instead. If the first copy is later moved or deleted, the other copy takes its place, with your progress.
+- A copy you open with **Open file** or **Open folder** is still added, because you asked for that one. When the library holds copies of the same book, a **duplicates** button appears next to the book count. It lists each book's copies with where they are and how far you've got, so you can remove the ones you don't need. Their files stay where they are.
+
+#### About this book
+
+Right-click a book and choose **About this book…**, or click **About** at the top of Now Playing, to see its Audible rating, how many people rated it, its description, narrator, release date and length.
+
+- Audible look-ups are **off until you turn them on**, in **Settings → Ratings and descriptions** or with the button in the About window. Choose your **Audible store** there too (United States, United Kingdom, Germany and others), because ratings differ between stores.
+- The first time, **Find on Audible…** searches for the book's title and author and lists the editions it finds, the one most people rated first, since its rating is the most reliable. Words like *(Unabridged)* are left out of the search, and you can change the title and author before searching again. If the book's files carry an Audible product number (ASIN), as many files bought from Audible do, that edition is listed first.
+- Choose the edition you have. The app remembers it, so it never guesses again, and the rating appears on the book's card, for example `★ 4.5 · 23k`. **Change edition…** picks another and **Not this book** removes the match.
+- Ratings from fewer than 100 people are marked as possibly unreliable.
+- The details are saved on your computer and refreshed when you open About for a book whose details are more than 30 days old. Nothing is downloaded in the background.
+- **What is sent:** only the title and author you search for, or the product number of the edition you chose, and only to the Audible store you picked. Nothing is sent while look-ups are off; the details already saved stay visible.
+- This uses the same catalogue look-up that Audible's own apps and other audiobook players use. It isn't an official, documented service, so it may stop working if Audible changes it.
+
+#### Editing a book's details
+
+If a book's title or author is wrong, or it has no cover or the wrong one, right-click it in the Library and choose **Edit details…**, or click **Edit** at the top of Now Playing.
+
+- Change the **Title** and **Author**, and press **Save**. The new details are used everywhere: the Library card, search, sorting, Now Playing, Statistics and the system's media controls.
+- **Choose image…** picks a JPEG, PNG, GIF, BMP or WebP image to use as the cover. **Use original** goes back to the cover found with the book.
+- Clear a field, or type back what the files say, to use the files' own details again.
+- Search finds a book by its corrected details and by its original ones.
+- Your audio files and folders are never changed. The details are kept in `library.json`, and a copy of each chosen cover in `covers/` (see [Your data](#your-data)), so the cover stays even if you delete the image you chose. Corrections follow books that move, like your progress does.
 
 #### Collections
 
@@ -96,17 +131,55 @@ The **Statistics** tab shows how much you listen. Time is only counted while a b
 In **Settings → Library folder** you can choose the folder where you keep your audiobooks. Every book in it is added to the library, using the same rules as **Add books**, and the folder is checked again:
 
 - when the app starts and when you choose the folder,
-- when you open the Library tab (at most every 30 seconds),
-- every 2 minutes while the app is open, and
+- when you open the Library tab (at most every 30 seconds, or every 2 minutes for a folder on a server),
+- every 2 minutes while the app is open (every 10 minutes for a folder on a server), and
 - when you click **Check now**.
 
+System folders are skipped: hidden folders, Synology's `#recycle`, `#snapshot` and `@eaDir` folders, and Windows' `$RECYCLE.BIN` and `System Volume Information`. So books in a NAS's recycle bin or snapshots aren't added.
+
 A book whose files changed in the last 30 seconds is left until the next check, so a book that is still being copied isn't added half-finished. If a book gets a new part, its card is updated. Books you remove from the library aren't added again; adding one by hand brings it back. **Stop importing** turns this off and leaves the books already in your library where they are.
+
+#### Books on a NAS or network share
+
+You can keep your audiobooks on a NAS, such as a Synology, or any computer that shares folders, and listen from it over your home network or a VPN such as WireGuard:
+
+1. Share the folder over SMB. On a Synology this is on by default (**Control Panel → File Services**).
+2. Connect to it on your computer. On a Mac, use **Finder → Go → Connect to Server** with `smb://` and the NAS's address, for example `smb://10.0.0.5/audiobooks`. On Windows, use **Map network drive** with `\\10.0.0.5\audiobooks`.
+3. Choose the shared folder in **Settings → Library folder**.
+
+Books play straight from the share. Covers and part lengths are remembered on your computer, so the Library opens without reading every book over the network. When the VPN is off or the NAS is asleep, nothing freezes the window: books show `Not connected`, the library folder's status says the folder isn't available or isn't responding, and nothing about your books is forgotten.
+
+While a book plays, the app reads up to 20 seconds ahead, so short drop-outs in the connection aren't heard at all. If the connection stays down longer, playback goes quiet and Now Playing says *Waiting for the drive or server…*. It carries on by itself when the connection comes back, or stops with a message if your computer gives up on the server.
+
+#### Offline listening
+
+To listen to a book on your NAS without the network or VPN, for example while travelling, right-click it and choose **Download for offline listening**. A copy is kept on your computer:
+
+- The book downloads in the background, and its card shows how far it has got (`Downloading 45%`), then `Downloaded`. **Cancel download** stops it and deletes what was copied.
+- A downloaded book always plays from the copy on your computer, even when the NAS is there, so it starts quickly and doesn't use the network. It's still the same book: your place, statistics, edited details, Audible match and sync all carry on as before.
+- If the connection drops while downloading, the download pauses (`Download paused`) and carries on by itself when the NAS is back, without copying the finished parts again. A part is only used once it has been copied completely.
+- If the book changes on the NAS, such as a part being added, its card says `Download out of date` and the menu offers **Update download**.
+- The app checks there's enough space before downloading, and tells you if there isn't.
+- **Remove download** deletes the copy on your computer; the book on the NAS is never touched. Removing a book from the library deletes its copy too.
+- **Settings → Offline downloads** shows how many books are downloaded and how much space they use, and has **Remove all downloads**. Turn on **Keep the book I'm listening to downloaded** to have the book you open downloaded automatically (books on a server only). When you open another book, the previous automatic download is removed, so only one is kept.
+
+#### Sync between computers
+
+To carry on a book on another computer where you stopped on this one, choose the same folder in **Settings → Sync between computers** on each computer: a folder on your NAS, or one kept in step by Synology Drive, iCloud Drive, Dropbox or OneDrive. The books themselves need to be on each computer, or on the NAS.
+
+- Each computer saves its place in every book to its own file in that folder, in a hidden `.audiobook-player-sync` folder, so two computers never write the same file. It saves when you pause, every minute while you listen, and when you quit.
+- It reads the other computers' places when the app starts, when you switch back to it, every minute, and when you click **Sync now**.
+- Books are matched by their files' names and sizes, not their folders, so it doesn't matter where each computer keeps them. If one computer has different files for the same book, such as a re-encoded copy, your place is matched by the time into the book instead.
+- The most recent listen wins. When you start the app, it opens the book you were listening to last on any computer.
+- If the book you have open was listened to further on another computer, the app asks first: *Continue from 3:35:00? You listened to “Dune” on MacBook 10 minutes ago.* Choose **Jump there** or **Stay here**; it never moves your place while you're listening.
+- When the folder can't be reached, for example with the VPN off, your place is kept on this computer and synced once the folder is back.
+- Only your place in each book and whether you've finished it are synced. Collections, edited details, Audible matches and listening statistics stay on each computer.
 
 Progress needs the length of every part. For MP3 books this means reading each file once, which happens in the background the first time a book is added. The lengths are remembered after that.
 
 ### Your data
 
-Everything the app remembers stays on your computer, in the app's folder:
+Everything the app remembers stays on your computer, in the app's folder. The only things that ever leave it are a search to Audible, if you turn [Audible look-ups](#about-this-book) on, and your place in each book, written to the sync folder you choose if you turn on [syncing between computers](#sync-between-computers):
 
 | System | Folder |
 |---|---|
@@ -116,12 +189,18 @@ Everything the app remembers stays on your computer, in the app's folder:
 
 - `library.json` holds your library, where you are in each book and your listening statistics. It is saved by writing a complete new copy and then swapping it in, so a crash or power cut while saving can't leave a half-written file.
 - `backups/` keeps a copy of `library.json` from each of the last 7 days. If `library.json` is ever unreadable, the app restores the newest good backup and tells you. If there is no backup, it keeps the damaged file aside instead of overwriting it.
-- `preferences.json` holds your settings (volume, speed, appearance, library folder).
+- `covers/` holds copies of the covers you chose with **Edit details…**, scaled down to at most 1200 pixels.
+- `shelf-cache.json` and `thumbnails/` remember each book's title, author and a small copy of its cover, so the Library opens quickly instead of reading every book's tags and full-size cover each time. A book is read again as soon as its first audio file, its folder or its cover image changes. Books that leave the library are dropped from the cache when the app starts. The cache can be deleted at any time; it is rebuilt the next time the app opens.
+- `offline/` holds the books you've downloaded for offline listening. **Settings → Offline downloads** shows how much space they use and can remove them all.
+- Your sync folder, if you choose one, holds a small file per computer with its place in each book. Nothing else is written there.
+- `online.json` holds the Audible details of the books you've matched. Which edition each book is matched to is kept in `library.json`, so it's backed up with the rest of your library.
+- `preferences.json` holds your settings (volume, speed, appearance, library folder, Audible look-ups and store).
 
 `library.json` doesn't grow forever. Each time the app starts it tidies up:
 
 - **Part lengths** are forgotten for files that were deleted or changed, and for books no longer in the library. A book whose drive isn't connected keeps them, so it doesn't have to be measured again when the drive comes back.
 - **Removed books** that have also been deleted from the disk lose their saved place. A removed book that is still on the disk, or on a drive that isn't connected, is remembered, so it isn't imported again.
+- **Edited details** of books that have been deleted from the disk are forgotten, along with any covers nothing uses any more.
 - **Daily statistics** older than a year are folded into one summary. Total listening time, average speed and listening streaks stay exactly the same; the charts only show the last 26 weeks anyway. Each book's listening time and finished books are kept, because **Most listened** and **Books finished** use them.
 
 To move to a new computer, copy the whole folder. Books that end up somewhere else are found again automatically (see below).

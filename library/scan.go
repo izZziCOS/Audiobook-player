@@ -116,7 +116,7 @@ func findBooks(directory string, depth int, books *[]string) error {
 
     switch {
     case len(files) == 0:
-    case allWholeBooks(files):
+    case WholeBooksOnly(files):
         *books = append(*books, files...)
     default:
         *books = append(*books, directory)
@@ -132,7 +132,7 @@ func findBooks(directory string, depth int, books *[]string) error {
     }
 
     for _, entry := range entries {
-        if entry.IsDir() && !strings.HasPrefix(entry.Name(), ".") {
+        if entry.IsDir() && !SkipFolder(entry.Name()) {
             _ = findBooks(filepath.Join(directory, entry.Name()), depth+1, books)
         }
     }
@@ -140,7 +140,7 @@ func findBooks(directory string, depth int, books *[]string) error {
     return nil
 }
 
-func allWholeBooks(files []string) bool {
+func WholeBooksOnly(files []string) bool {
     for _, file := range files {
         if !strings.EqualFold(filepath.Ext(file), ".m4b") {
             return false

@@ -12,7 +12,6 @@ import (
     "fyne.io/fyne/v2/theme"
 
     "github.com/izzzicos/audiobook-player/audio"
-    "github.com/izzzicos/audiobook-player/library"
     "github.com/izzzicos/audiobook-player/ui/autoimport"
     "github.com/izzzicos/audiobook-player/ui/kit"
 )
@@ -34,6 +33,7 @@ func (ui *UI) buildTabs() fyne.CanvasObject {
 
         if tab == ui.libraryTab {
             ui.shelf.Refresh()
+            ui.shelf.RecheckMissing()
             ui.importer.ScanIfStale()
         }
         if tab == ui.statsTab {
@@ -56,7 +56,7 @@ func (ui *UI) playFromShelf(path string) error {
         return nil
     }
 
-    book, err := library.OpenBook(path)
+    book, err := ui.offline.Open(path)
     if err != nil {
         return err
     }
@@ -136,6 +136,8 @@ func (ui *UI) everySaveTick() {
     }
 
     ui.data.Flush()
+    ui.syncer.Tick(time.Now())
+    ui.offline.Tick(time.Now())
 }
 
 func (ui *UI) tick() {
@@ -157,7 +159,7 @@ func (ui *UI) tick() {
         case <-saveTicker.C:
             fyne.Do(ui.everySaveTick)
         case <-importTicker.C:
-            fyne.Do(ui.importer.Scan)
+            fyne.Do(ui.importer.ScanIfDue)
         }
     }
 }

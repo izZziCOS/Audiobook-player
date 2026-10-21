@@ -1,8 +1,10 @@
 package shelf
 
 import (
+    "errors"
     "fmt"
     "path/filepath"
+    "sync/atomic"
 
     "fyne.io/fyne/v2"
     "fyne.io/fyne/v2/dialog"
@@ -11,7 +13,10 @@ import (
     "github.com/ncruces/zenity"
 
     "github.com/izzzicos/audiobook-player/library"
+    "github.com/izzzicos/audiobook-player/ui/about"
+    "github.com/izzzicos/audiobook-player/ui/details"
     "github.com/izzzicos/audiobook-player/ui/kit"
+    "github.com/izzzicos/audiobook-player/ui/offline"
     "github.com/izzzicos/audiobook-player/ui/userdata"
 )
 
@@ -23,12 +28,16 @@ type Shelf struct {
     Speed        func() float64
     SyncProgress func()
     StartFolder  func() string
+    EditDetails  func(path string, original details.Original)
+    ShowAbout    func(path string, book about.Book)
+    Offline      *offline.Store
 
     window fyne.Window
     prefs  fyne.Preferences
     data   *userdata.Data
     picker *kit.Picker
     async  func(func())
+    cache  *shelfCache
 
     content       fyne.CanvasObject
     grid          *fyne.Container
@@ -40,8 +49,10 @@ type Shelf struct {
     filterButtons    map[string]*widget.Button
     sortButton       *widget.Button
     collectionButton *widget.Button
+    duplicatesButton *widget.Button
 
     entries        []*shelfEntry
+    rechecking     atomic.Bool
     order          string
     filter         string
     collection     string
@@ -53,6 +64,7 @@ type Card struct {
     Title    string
     Author   string
     Status   string
+    Rating   string
     Progress float64
 }
 
@@ -63,6 +75,9 @@ func New(window fyne.Window, prefs fyne.Preferences, data *userdata.Data, picker
         data:   data,
         picker: picker,
         async:  async,
+    }
+    if file := data.File(); file != "" {
+        s.cache = newShelfCache(filepath.Dir(file))
     }
     s.content = s.build()
 
@@ -86,7 +101,26 @@ func (s *Shelf) Load() {
     s.publish()
 
     s.Refresh()
+    s.loadCache()
     s.loadShelfInfo(s.entries)
+}
+
+func (s *Shelf) loadCache() {
+    s.cache.load()
+
+    books := map[string]bool{}
+    covers := map[string]bool{}
+    for _, entry := range s.entries {
+        books[entry.path] = true
+        if file := s.data.CoverFile(entry.path); file != "" {
+            covers[filepath.Base(file)] = true
+        }
+    }
+
+    cache := s.cache
+    s.async(func() {
+        cache.prune(books, covers)
+    })
 }
 
 func (s *Shelf) publish() {
@@ -145,6 +179,7 @@ func (entry *shelfEntry) view() Card {
         Title:    entry.title,
         Author:   entry.card.Author,
         Status:   entry.card.Status,
+        Rating:   entry.card.Rating,
         Progress: entry.card.Progress,
     }
 }
@@ -189,13 +224,96 @@ func (s *Shelf) open(entry *shelfEntry) {
         return
     }
 
-    if err := s.Open(entry.path); err != nil {
-        entry.missing = true
-        s.updateCard(entry)
-        dialog.ShowError(
-            fmt.Errorf("%q can't be found. It may have been moved or renamed, or be on a drive that isn't connected", entry.title),
-            s.window,
-        )
+    path := entry.path
+    if s.Offline.State(path) == offline.Downloaded {
+        if err := s.Open(path); err != nil {
+            dialog.ShowError(openError(entry.title, err, false), s.window)
+        }
+        return
+    }
+
+    s.async(func() {
+        err := reachable(path, library.ResponseTimeout)
+        unavailable := errors.Is(err, library.ErrNotResponding) || err != nil && library.Unavailable(path)
+
+        fyne.Do(func() {
+            if !errors.Is(err, library.ErrNotResponding) {
+                if err = s.Open(path); err == nil {
+                    return
+                }
+            }
+
+            entry.missing = true
+            entry.unavailable = unavailable
+            s.updateCard(entry)
+            dialog.ShowError(openError(entry.title, err, unavailable), s.window)
+        })
+    })
+}
+
+func openError(title string, err error, unavailable bool) error {
+    switch {
+    case errors.Is(err, library.ErrNotResponding):
+        return fmt.Errorf("%q is on a drive or server that isn't responding. Check the connection, for example your VPN, then try again", title)
+    case unavailable:
+        return fmt.Errorf("%q is on a drive or server that isn't connected. Connect it, then try again. Your place in the book is kept", title)
+    default:
+        return fmt.Errorf("%q can't be found. It may have been moved or renamed", title)
+    }
+}
+
+func (s *Shelf) RecheckMissing() {
+    var missing []*shelfEntry
+    for _, entry := range s.entries {
+        if entry.missing {
+            missing = append(missing, entry)
+        }
+    }
+    if len(missing) == 0 || !s.rechecking.CompareAndSwap(false, true) {
+        return
+    }
+
+    paths := make([]string, len(missing))
+    for i, entry := range missing {
+        paths[i] = entry.path
+    }
+
+    s.async(func() {
+        var back []string
+        for _, path := range paths {
+            if reachable(path, library.ResponseTimeout) == nil {
+                back = append(back, path)
+            }
+        }
+
+        fyne.Do(func() {
+            s.rechecking.Store(false)
+            var found []*shelfEntry
+            for _, path := range back {
+                if entry := s.find(path); entry != nil {
+                    found = append(found, entry)
+                }
+            }
+            s.loadShelfInfo(found)
+        })
+    })
+}
+
+func (s *Shelf) editDetails(entry *shelfEntry) {
+    if s.EditDetails == nil {
+        return
+    }
+
+    original := entry.original
+    if original.Title == "" {
+        original.Title = library.CleanName(filepath.Base(entry.path))
+    }
+    s.EditDetails(entry.path, original)
+}
+
+func (s *Shelf) showAbout(entry *shelfEntry) {
+    if s.ShowAbout != nil {
+        s.ShowAbout(entry.path, about.Book{Title: entry.title, Author: entry.author, Cover: entry.card.Thumbnail})
     }
 }
 

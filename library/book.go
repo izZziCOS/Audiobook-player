@@ -11,6 +11,7 @@ import (
 type Book struct {
     Folder    string
     Parts     []string
+    Local     []string
     Index     int
     Durations []float64
 }
@@ -61,6 +62,18 @@ func (b *Book) Key() string {
 
 func (b *Book) Current() string {
     return b.Parts[b.Index]
+}
+
+func (b *Book) Playable() string {
+    return b.PlayablePart(b.Index)
+}
+
+func (b *Book) PlayablePart(index int) string {
+    if index >= 0 && index < len(b.Local) && b.Local[index] != "" {
+        return b.Local[index]
+    }
+
+    return b.Parts[index]
 }
 
 func (b *Book) IsMultiPart() bool {

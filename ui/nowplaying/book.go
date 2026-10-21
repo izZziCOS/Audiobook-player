@@ -9,15 +9,56 @@ import (
         "fyne.io/fyne/v2/widget"
 
         "github.com/izzzicos/audiobook-player/library"
+        "github.com/izzzicos/audiobook-player/ui/about"
+        "github.com/izzzicos/audiobook-player/ui/details"
         "github.com/izzzicos/audiobook-player/ui/kit"
+        "github.com/izzzicos/audiobook-player/ui/userdata"
     )
 
+const detailsThumbnailSide = 320
+
 func (p *Player) OpenFile(path string) {
+    if p.FolderBookOf != nil {
+        if folder := p.FolderBookOf(path); folder != "" && p.openPart(folder, path) {
+            return
+        }
+    }
+
     p.OpenBook(library.SingleFile(path))
 }
 
+func (p *Player) openStored(path string) (*library.Book, error) {
+    if p.Offline != nil {
+        return p.Offline.Open(path)
+    }
+
+    return library.OpenBook(path)
+}
+
+func (p *Player) openPart(folder, path string) bool {
+    book, err := p.openStored(folder)
+    if err != nil {
+        return false
+    }
+
+    index, found := book.Find(path)
+    if !found {
+        return false
+    }
+
+    p.SavePosition()
+    book.Index = index
+    position := 0.0
+    if saved, found := p.data.Positions[book.Key()]; found && saved.Part == book.Current() {
+        position = saved.Position
+    }
+    p.showBook(book, position)
+
+    return true
+}
+
 func (p *Player) OpenFolder(folder string) {
-    book, err := library.OpenFolder(folder)
+    book, err := p.openStored(folder)
     if err != nil {
         dialog.ShowError(err, p.window)
         return
@@ -27,7 +68,7 @@ func (p *Player) OpenFolder(folder string) {
 }
 
 func (p *Player) Resume(folder, path string, fallbackPosition float64) {
-    book := findBook(folder, path)
+    book := p.findBook(folder, path)
 
     if _, saved := p.data.Positions[book.Key()]; saved {
         p.OpenBook(book)
@@ -37,14 +78,18 @@ func (p *Player) Resume(folder, path string, fallbackPosition float64) {
     p.showBook(book, fallbackPosition)
 }
 
-func findBook(folder, path string) *library.Book {
+func (p *Player) findBook(folder, path string) *library.Book {
     if folder != "" {
-        if book, err := library.OpenFolder(folder); err == nil {
+        if book, err := p.openStored(folder); err == nil {
             if index, found := book.Find(path); found {
                 book.Index = index
                 return book
             }
         }
+    }
+
+    if book, err := p.openStored(path); err == nil && book.Folder == "" {
+        return book
     }
 
     return library.SingleFile(path)
@@ -70,7 +115,8 @@ func (p *Player) OpenBook(book *library.Book) {
 }
 
 func (p *Player) showBook(book *library.Book, position float64) {
-    if !p.loadAudio(book.Current()) {
+    p.Offline.Prepare(book)
+    if !p.loadAudio(book.Key(), book.Playable()) {
         return
     }
 
@@ -102,7 +148,7 @@ func (p *Player) goToPart(index int, play bool) {
         return
     }
 
-    if !p.loadAudio(p.book.Parts[index]) {
+    if !p.loadAudio(p.book.Key(), p.book.PlayablePart(index)) {
         return
     }
 
@@ -168,6 +214,8 @@ func (p *Player) updateBookInfo() {
         p.partsButton.SetText("Parts")
     }
 
+    p.editButton.Show()
+    p.aboutButton.Show()
     for _, object := range []fyne.CanvasObject{p.previousButton, p.nextButton, p.partsButton} {
         if p.book.IsMultiPart() || p.hasChapters() {
             object.Show()
@@ -193,9 +241,58 @@ func (p *Player) setSubtitle(text string) {
     kit.RefreshContent(p.window)
 }
 
-func (p *Player) updateCover(audioPath string, embedded []byte) {
-    cover, _ := library.FindCover(audioPath, embedded)
+func (p *Player) applyEdit(key string) {
+    edit := p.data.Edit(key)
+    p.metadata = p.tags.Override(edit.Title, edit.Author)
 
+    cover := p.foundCover
+    if file := p.data.CoverFile(key); file != "" {
+        if custom := userdata.ReadCustomCover(file); custom != nil {
+            cover = &library.Cover{Name: file, Data: custom}
+        }
+    }
+    p.showCover(cover)
+}
+
+func (p *Player) RefreshDetails(key string) {
+    if p.book == nil || p.book.Key() != key {
+        return
+    }
+
+    p.applyEdit(key)
+    setRichText(p.title, p.book.Title(p.metadata))
+    p.setSubtitle(p.subtitleText())
+    p.publishTrack()
+}
+
+func (p *Player) editDetails() {
+    if p.book == nil || p.EditDetails == nil {
+        return
+    }
+
+    original := details.Original{
+        Title:  p.book.Title(p.tags),
+        Author: p.tags.Artist,
+    }
+    if p.foundCover != nil {
+        original.Cover, _ = library.Thumbnail(p.foundCover.Data, detailsThumbnailSide)
+    }
+    p.EditDetails(p.book.Key(), original)
+}
+
+func (p *Player) showAbout() {
+    if p.book == nil || p.ShowAbout == nil {
+        return
+    }
+
+    book := about.Book{Title: p.book.Title(p.metadata), Author: p.metadata.Artist}
+    if p.cover.Resource != nil {
+        book.Cover, _ = library.Thumbnail(p.cover.Resource.Content(), detailsThumbnailSide)
+    }
+    p.ShowAbout(p.book.Key(), book)
+}
+
+func (p *Player) showCover(cover *library.Cover) {
     p.cover.Resource = nil
     p.coverName = ""
     p.setBackdropTint(nil)
@@ -304,4 +401,12 @@ func (p *Player) showContents(title string, rows []contentsRow, current int, onS
     contentsDialog.Resize(fyne.NewSize(min(size.Width-40, 460), size.Height*0.8))
     contentsDialog.Show()
     list.ScrollTo(current)
+}
+
+func (p *Player) Title() string {
+    return p.title.String()
+}
+
+func (p *Player) ShowsCover(name string) bool {
+    return name != "" && p.coverName == name
 }

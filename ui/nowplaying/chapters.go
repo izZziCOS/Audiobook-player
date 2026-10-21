@@ -102,6 +102,24 @@ func (p *Player) next() {
     p.goToRelativePart(1)
 }
 
+func (p *Player) MoveTo(part string, seconds float64) bool {
+    if p.book == nil || p.audio == nil {
+        return false
+    }
+
+    index, found := p.book.Find(part)
+    if !found {
+        return false
+    }
+
+    if index != p.book.Index {
+        p.goToPart(index, p.playing)
+    }
+    p.seekInPart(seconds)
+
+    return true
+}
+
 func (p *Player) seekInPart(seconds float64) {
     p.forgetSleepPosition()
 

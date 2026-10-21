@@ -1,9 +1,11 @@
 package library
 
 import (
+    "fmt"
     "os"
     "path/filepath"
     "runtime"
+    "slices"
     "strings"
 )
 
@@ -23,6 +25,10 @@ func FingerprintOf(path string) (Fingerprint, error) {
         return Fingerprint{}, err
     }
 
+    return FingerprintOfBook(book)
+}
+
+func FingerprintOfBook(book *Book) (Fingerprint, error) {
     fingerprint := Fingerprint{Name: filepath.Base(book.Key())}
     for _, part := range book.Parts {
         info, err := os.Stat(part)
@@ -53,6 +59,20 @@ func (f Fingerprint) Matches(candidate Fingerprint) bool {
     }
 
     return f.Name == candidate.Name || len(f.Parts) == len(candidate.Parts)
+}
+
+func (f Fingerprint) Contents() string {
+    parts := make([]string, len(f.Parts))
+    for i, part := range f.Parts {
+        parts[i] = fmt.Sprintf("%s\x00%d", part.Name, part.Size)
+    }
+    slices.Sort(parts)
+
+    return strings.Join(parts, "\x00\x00")
+}
+
+func (f Fingerprint) SameContents(other Fingerprint) bool {
+    return len(f.Parts) > 0 && f.Contents() == other.Contents()
 }
 
 func Normalize(path string) string {

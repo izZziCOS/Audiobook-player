@@ -91,3 +91,33 @@ func TestDeletedBooksLeaveTheirCollections(t *testing.T) {
         t.Fatal("only books deleted from the disk should leave their collections")
     }
 }
+
+func TestMergingAPartIntoItsFolderBook(t *testing.T) {
+    data := New("")
+    folder := filepath.Join("books", "Hobbit")
+    part := filepath.Join(folder, "Part 2.mp3")
+    data.Positions[part] = Position{Part: part, Position: 42, Listened: 100, Finished: true}
+    data.CreateCollection("Classics")
+    data.SetInCollection("Classics", part, true)
+    data.SetEdit(part, BookEdit{Title: "The Hobbit"})
+    data.LastBook = LastBook{File: part}
+
+    data.Merge(part, folder)
+
+    position, found := data.Positions[folder]
+    if !found || position.Part != part || position.Position != 42 || position.Finished {
+        t.Fatalf("the folder book should carry on from the part, got %+v", position)
+    }
+    if _, left := data.Positions[part]; left {
+        t.Fatal("the part shouldn't keep a place of its own")
+    }
+    if !data.InCollection("Classics", folder) || data.InCollection("Classics", part) {
+        t.Fatal("the folder book should take the part's place in its collections")
+    }
+    if data.Edit(folder).Title != "The Hobbit" {
+        t.Fatal("the part's corrected details should move to the folder book")
+    }
+    if data.LastBook != (LastBook{Folder: folder, File: part}) {
+        t.Fatalf("the last book should be the folder book, got %+v", data.LastBook)
+    }
+}

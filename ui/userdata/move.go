@@ -51,9 +51,33 @@ func (d *Data) Move(old, newPath string) {
     }
 
     d.moveInCollections(old, newPath)
+    d.moveEdit(old, newPath)
+    d.moveDownload(old, newPath)
 
     d.LastBook.Folder = MovedPath(d.LastBook.Folder, old, newPath)
     d.LastBook.File = MovedPath(d.LastBook.File, old, newPath)
+}
+
+func (d *Data) Merge(part, book string) {
+    if part == book {
+        return
+    }
+
+    if position, found := d.Positions[part]; found {
+        position.Finished = false
+        if existing, taken := d.Positions[book]; !taken || existing.Listened < position.Listened {
+            d.Positions[book] = position
+        }
+        delete(d.Positions, part)
+    }
+
+    d.Stats.Rekey(part, book)
+    d.moveInCollections(part, book)
+    d.moveEdit(part, book)
+
+    if d.LastBook.Folder == "" && d.LastBook.File == part {
+        d.LastBook.Folder = book
+    }
 }
 
 func (d *Data) MoveIgnored(from, to string) {

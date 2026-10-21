@@ -1,6 +1,7 @@
 package ui
 
 import (
+    "cmp"
     "fmt"
     "os"
     "path/filepath"
@@ -13,12 +14,17 @@ import (
 
     "github.com/izzzicos/audiobook-player/audio"
     "github.com/izzzicos/audiobook-player/instance"
+    "github.com/izzzicos/audiobook-player/library"
+    "github.com/izzzicos/audiobook-player/ui/about"
     "github.com/izzzicos/audiobook-player/ui/autoimport"
+    "github.com/izzzicos/audiobook-player/ui/details"
     "github.com/izzzicos/audiobook-player/ui/kit"
     "github.com/izzzicos/audiobook-player/ui/nowplaying"
+    "github.com/izzzicos/audiobook-player/ui/offline"
     "github.com/izzzicos/audiobook-player/ui/settings"
     "github.com/izzzicos/audiobook-player/ui/shelf"
     "github.com/izzzicos/audiobook-player/ui/statistics"
+    "github.com/izzzicos/audiobook-player/ui/syncing"
     "github.com/izzzicos/audiobook-player/ui/userdata"
 )
 
@@ -32,9 +38,13 @@ type UI struct {
     async func(func())
 
     picker     *kit.Picker
+    editor     *details.Editor
+    about      *about.About
     player     *nowplaying.Player
     shelf      *shelf.Shelf
     importer   *autoimport.Importer
+    syncer     *syncing.Syncer
+    offline    *offline.Store
     statistics *statistics.View
     settings   *settings.Settings
 
@@ -112,21 +122,47 @@ func (ui *UI) build() {
         dialog.ShowError(fmt.Errorf("your library and listening progress couldn't be saved: %w", err), ui.Window)
     }
 
+    ui.editor = details.New(ui.Window, ui.picker, ui.data, ui.async)
+    ui.about = about.New(ui.Window, prefs, ui.data, ui.async)
     ui.player = nowplaying.New(ui.Window, prefs, ui.data, ui.picker, ui.async)
     ui.shelf = shelf.New(ui.Window, prefs, ui.data, ui.picker, ui.async)
     ui.importer = autoimport.New(ui.Window, prefs, ui.data, ui.shelf, ui.picker, ui.async)
     ui.statistics = statistics.New(ui.data, ui.shelf.Title)
-    ui.settings = settings.New(ui.App, ui.Window, ui.importer.Section())
+    ui.syncer = syncing.New(ui.Window, prefs, ui.data, ui.picker, ui.async, ui.player)
+    ui.offline = offline.New(ui.Window, prefs, ui.data, ui.async)
+    ui.settings = settings.New(ui.App, ui.Window, ui.importer.Section(), ui.offline.Section(), ui.syncer.Section(), ui.about.Section())
 
     ui.player.OnBookOpened = func(key string) {
         ui.shelf.Add([]string{key})
+        ui.offline.BookOpened(key)
     }
+    ui.player.Offline = ui.offline
+    ui.shelf.Offline = ui.offline
+    ui.offline.OnChanged = ui.shelf.DownloadChanged
+    ui.offline.Title = ui.shelf.Title
     ui.shelf.Open = ui.playFromShelf
     ui.shelf.Show = ui.showLibrary
     ui.shelf.Speed = ui.player.Speed
     ui.shelf.SyncProgress = ui.player.SavePosition
     ui.shelf.StartFolder = ui.player.LibraryFolder
     ui.importer.StartFolder = ui.player.LibraryFolder
+    ui.syncer.StartFolder = ui.importer.Folder
+    ui.syncer.Title = ui.shelf.Title
+    ui.syncer.OnChanged = ui.shelf.Refresh
+    ui.player.OnPaused = ui.syncer.Write
+
+    ui.player.FolderBookOf = ui.shelf.FolderBookOf
+    ui.player.EditDetails = ui.editor.Show
+    ui.shelf.EditDetails = ui.editor.Show
+    ui.player.ShowAbout = ui.about.Show
+    ui.shelf.ShowAbout = ui.about.Show
+    ui.about.OnLinked = func(string) {
+        ui.shelf.Refresh()
+    }
+    ui.editor.OnSaved = func(key string) {
+        ui.player.RefreshDetails(key)
+        ui.shelf.Reload(key)
+    }
 
     ui.content = ui.buildTabs()
 }
@@ -137,6 +173,9 @@ func (ui *UI) setup() {
     ui.Window.SetPadded(false)
     ui.Window.SetContent(ui.content)
     ui.App.Lifecycle().SetOnStopped(ui.save)
+    ui.App.Lifecycle().SetOnEnteredForeground(func() {
+        ui.syncer.Pull(nil)
+    })
     ui.App.Lifecycle().SetOnStarted(func() {
         kit.FollowTheme(ui.settings.MatchTitleBar)
     })
@@ -150,9 +189,6 @@ func (ui *UI) setup() {
 
     ui.player.StartMediaControls()
     ui.load()
-    if ui.player.Book() == nil {
-        ui.showLibrary()
-    }
 
     go ui.tick()
 }
@@ -164,19 +200,55 @@ func (ui *UI) load() {
         dialog.ShowInformation("Library restored", notice, ui.Window)
     }
     ui.shelf.Load()
+    ui.offline.Load()
     ui.tidy()
     ui.importer.Load()
+    ui.syncer.Load()
 
+    ui.resumeLastBook()
+}
+
+func (ui *UI) resumeLastBook() {
+    ui.syncer.Pull(func(elsewhere *syncing.Change) {
+        if elsewhere != nil && elsewhere.Record.Listened > ui.lastListened() {
+            ui.data.LastBook = elsewhere.LastBook()
+        }
+        ui.resumeLocalBook()
+    })
+}
+
+func (ui *UI) lastListened() int64 {
+    key := ui.data.LastBook.Folder
+    if key == "" {
+        key = ui.data.LastBook.File
+    }
+
+    return ui.data.Positions[key].Listened
+}
+
+func (ui *UI) resumeLocalBook() {
     last := ui.data.LastBook
+    lastKey := cmp.Or(last.Folder, last.File)
     if last.File == "" {
+        ui.showLibrary()
         return
     }
 
-    if _, err := os.Stat(last.File); err != nil {
-        return
-    }
+    ui.async(func() {
+        err := library.Reachable(last.File, library.ResponseTimeout)
+        if ui.offline.Local(lastKey) != nil {
+            err = nil
+        }
 
-    ui.player.Resume(last.Folder, last.File, 0)
+        fyne.Do(func() {
+            if err == nil && ui.player.Book() == nil {
+                ui.player.Resume(last.Folder, last.File, 0)
+            }
+            if ui.player.Book() == nil {
+                ui.showLibrary()
+            }
+        })
+    })
 }
 
 func (ui *UI) tidy() {
@@ -192,6 +264,7 @@ func (ui *UI) tidy() {
 func (ui *UI) save() {
     ui.player.SaveSettings()
     ui.data.Flush()
+    ui.syncer.Flush()
 }
 
 func (ui *UI) openArguments(args []string) {

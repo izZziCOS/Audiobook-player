@@ -18,11 +18,11 @@ func (p *Player) loadDurations(book *library.Book) {
     var missing []int
 
     for index, part := range book.Parts {
-        if seconds, found := p.data.CachedDuration(part); found {
+        if seconds, found := p.data.CachedDurationOf(part, book.PlayablePart(index)); found {
             durations[index] = seconds
         } else if index == book.Index {
             durations[index] = p.durationSeconds()
-            p.data.CacheDuration(part, durations[index])
+            p.data.CacheDurationOf(part, book.PlayablePart(index), durations[index])
         } else {
             missing = append(missing, index)
         }
@@ -36,7 +36,7 @@ func (p *Player) loadDurations(book *library.Book) {
     p.async(func() {
         measured := map[string]userdata.PartDuration{}
         for _, index := range missing {
-            entry, err := userdata.MeasureDuration(book.Parts[index])
+            entry, err := userdata.MeasureDuration(book.PlayablePart(index))
             if err != nil {
                 return
             }

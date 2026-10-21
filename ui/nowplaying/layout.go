@@ -58,7 +58,15 @@ func (p *Player) buildTopBar() fyne.CanvasObject {
     p.partsButton.Importance = widget.LowImportance
     p.partsButton.Hide()
 
-    return container.NewBorder(nil, nil, openButton, p.partsButton)
+    p.editButton = widget.NewButtonWithIcon("Edit", theme.DocumentCreateIcon(), p.editDetails)
+    p.editButton.Importance = widget.LowImportance
+    p.editButton.Hide()
+
+    p.aboutButton = widget.NewButtonWithIcon("About", theme.InfoIcon(), p.showAbout)
+    p.aboutButton.Importance = widget.LowImportance
+    p.aboutButton.Hide()
+
+    return container.NewBorder(nil, nil, openButton, container.NewHBox(p.aboutButton, p.editButton, p.partsButton))
 }
 
 func (p *Player) buildCover() fyne.CanvasObject {

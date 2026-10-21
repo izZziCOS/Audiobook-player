@@ -9,6 +9,7 @@ import (
 
     "fyne.io/fyne/v2/test"
 
+    "github.com/izzzicos/audiobook-player/library"
     "github.com/izzzicos/audiobook-player/store"
     "github.com/izzzicos/audiobook-player/ui/internal/testbooks"
     "github.com/izzzicos/audiobook-player/ui/kit"
@@ -139,7 +140,7 @@ func TestUnreadableLibraryFolder(t *testing.T) {
 
     im.SetFolder(filepath.Join(t.TempDir(), "missing"))
 
-    if !strings.HasPrefix(im.status.Text, "Couldn't read the folder") || len(books.Cards()) != 0 {
+    if !strings.HasPrefix(im.status.Text, "The library folder isn't available") || len(books.Cards()) != 0 {
         t.Fatalf("status %q", im.status.Text)
     }
 }
@@ -154,5 +155,76 @@ func TestRememberedFolderIsScanned(t *testing.T) {
 
     if im.Folder() != root || len(books.Cards()) != 3 {
         t.Fatalf("the remembered folder should be checked on start, got %q with %d books", im.Folder(), len(books.Cards()))
+    }
+}
+
+func TestLibraryFolderSkipsCopiesOfBooksAlreadyAdded(t *testing.T) {
+    im, books := newTestImporter(t)
+    elsewhere := filepath.Join(t.TempDir(), "Downloads", "Dune.m4b")
+    testbooks.CopyFile(t, "speech-aac-mono.m4b", elsewhere)
+    books.Add([]string{elsewhere})
+
+    root, _ := testbooks.Library(t)
+    testbooks.Backdate(t, root)
+    im.SetFolder(root)
+
+    if len(books.Cards()) != 3 || books.Contains(filepath.Join(root, "Herbert", "Dune.m4b")) {
+        t.Fatalf("the copy of Dune shouldn't be added, the library has %d books", len(books.Cards()))
+    }
+    if !strings.Contains(im.status.Text, "2 new books") || !strings.Contains(im.status.Text, "1 copy of a book already in your library was skipped") {
+        t.Fatalf("status %q", im.status.Text)
+    }
+}
+
+func TestNetworkFoldersAreCheckedLessOften(t *testing.T) {
+    im, _ := newTestImporter(t)
+    root, _ := testbooks.Library(t)
+    testbooks.Backdate(t, root)
+    im.SetFolder(root)
+
+    scans := 0
+    original := reachable
+    reachable = func(path string, timeout time.Duration) error {
+        scans++
+        return original(path, timeout)
+    }
+    t.Cleanup(func() { reachable = original })
+
+    im.lastImport = time.Now().Add(-Interval)
+    im.ScanIfDue()
+    if scans != 1 {
+        t.Fatal("a local folder should be checked every couple of minutes")
+    }
+
+    im.network.Store(true)
+    im.lastImport = time.Now().Add(-Interval)
+    im.ScanIfDue()
+    im.lastImport = time.Now().Add(-libraryTabRecheck)
+    im.ScanIfStale()
+    if scans != 1 {
+        t.Fatal("a folder on a server should be checked less often")
+    }
+
+    im.lastImport = time.Now().Add(-networkInterval)
+    im.ScanIfDue()
+    if scans != 2 {
+        t.Fatal("a folder on a server should still be checked in the end")
+    }
+}
+
+func TestAStalledServerIsReported(t *testing.T) {
+    im, books := newTestImporter(t)
+    root, _ := testbooks.Library(t)
+    original := reachable
+    reachable = func(string, time.Duration) error { return library.ErrNotResponding }
+    t.Cleanup(func() { reachable = original })
+
+    im.SetFolder(root)
+
+    if !strings.Contains(im.status.Text, "isn't responding") || !strings.Contains(im.status.Text, "VPN") || len(books.Cards()) != 0 {
+        t.Fatalf("status %q", im.status.Text)
+    }
+    if im.importing.Load() {
+        t.Fatal("the next check should still be able to run")
     }
 }

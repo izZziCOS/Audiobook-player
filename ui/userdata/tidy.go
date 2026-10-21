@@ -5,17 +5,22 @@ import (
     "maps"
     "os"
     "path/filepath"
+
+    "github.com/izzzicos/audiobook-player/library"
 )
 
 type TidyPlan struct {
     library map[string]bool
     parts   map[string]PartDuration
     removed []string
+    covers  string
+    used    map[string]bool
 }
 
 type Leftovers struct {
-    parts map[string]PartDuration
-    books []string
+    parts  map[string]PartDuration
+    books  []string
+    covers []string
 }
 
 func (d *Data) libraryPaths() map[string]bool {
@@ -31,6 +36,8 @@ func (d *Data) PlanTidy() TidyPlan {
     plan := TidyPlan{
         library: d.libraryPaths(),
         parts:   maps.Clone(d.Durations),
+        covers:  d.coversFolder(),
+        used:    map[string]bool{},
     }
 
     seen := map[string]bool{}
@@ -43,6 +50,15 @@ func (d *Data) PlanTidy() TidyPlan {
     for _, collection := range d.collections {
         for _, book := range collection.Books {
             seen[book] = true
+        }
+    }
+    for book := range d.downloads {
+        seen[book] = true
+    }
+    for book, edit := range d.edits {
+        seen[book] = true
+        if edit.Cover != "" {
+            plan.used[edit.Cover] = true
         }
     }
     for book := range seen {
@@ -85,6 +101,8 @@ func (p TidyPlan) Find() Leftovers {
         }
     }
 
+    leftovers.covers = unusedCovers(p.covers, p.used)
+
     return leftovers
 }
 
@@ -103,7 +121,7 @@ func owner(part string, library map[string]bool) (string, bool) {
 }
 
 func gone(path string) bool {
-    if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+    if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) || library.Unavailable(path) {
         return false
     }
 
@@ -138,6 +156,17 @@ func (d *Data) Forget(leftovers Leftovers) {
         if d.forgetInCollections(book) {
             changed = true
         }
+        if d.forgetEdit(book) {
+            changed = true
+        }
+        if _, found := d.downloads[book]; found {
+            delete(d.downloads, book)
+            changed = true
+        }
+    }
+
+    for _, name := range leftovers.covers {
+        d.releaseCover(name)
     }
 
     if changed {

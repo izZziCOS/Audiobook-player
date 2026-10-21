@@ -447,7 +447,7 @@ func tidyChapters(chapters []Chapter) []Chapter {
     })
 
     for i := range chapters {
-        chapters[i].Title = cleanTag(chapters[i].Title)
+        chapters[i].Title = CleanText(chapters[i].Title)
         if chapters[i].Title == "" {
             chapters[i].Title = fmt.Sprintf("Chapter %d", i+1)
         }

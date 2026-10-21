@@ -23,6 +23,7 @@ type bookCard struct {
     Title     string
     Author    string
     Status    string
+    Rating    string
     Progress  float64
     Thumbnail image.Image
     OnTapped  func()
@@ -86,6 +87,10 @@ func (c *bookCard) CreateRenderer() fyne.WidgetRenderer {
     status.SizeName = theme.SizeNameCaptionText
     status.Importance = widget.LowImportance
 
+    rating := widget.NewLabel("")
+    rating.SizeName = theme.SizeNameCaptionText
+    rating.Importance = widget.LowImportance
+
     cover := canvas.NewImageFromImage(nil)
     cover.FillMode = canvas.ImageFillContain
     cover.CornerRadius = 12
@@ -107,6 +112,7 @@ func (c *bookCard) CreateRenderer() fyne.WidgetRenderer {
         title:  title,
         author: author,
         status: status,
+        rating: rating,
         track:  canvas.NewRectangle(color.Transparent),
         fill:   canvas.NewRectangle(color.Transparent),
     }
@@ -126,6 +132,7 @@ type bookCardRenderer struct {
     title                 *widget.Label
     author                *widget.Label
     status                *widget.Label
+    rating                *widget.Label
     track                 *canvas.Rectangle
     fill                  *canvas.Rectangle
 }
@@ -163,8 +170,16 @@ func (r *bookCardRenderer) Layout(size fyne.Size) {
     r.fill.Resize(fyne.NewSize(barWidth*float32(min(max(r.card.Progress, 0), 1)), cardProgressThick))
     y += cardProgressThick
 
+    rowWidth := size.Width - 2*padding + innerPadding
+    ratingWidth := float32(0)
+    if r.card.Rating != "" {
+        ratingWidth = min(r.rating.MinSize().Width, rowWidth/2)
+    }
+    rowHeight := r.status.MinSize().Height
     r.status.Move(fyne.NewPos(padding-innerPadding/2, y))
-    r.status.Resize(fyne.NewSize(size.Width-2*padding+innerPadding, r.status.MinSize().Height))
+    r.status.Resize(fyne.NewSize(rowWidth-ratingWidth, rowHeight))
+    r.rating.Move(fyne.NewPos(padding-innerPadding/2+rowWidth-ratingWidth, y))
+    r.rating.Resize(fyne.NewSize(ratingWidth, rowHeight))
 }
 
 func (r *bookCardRenderer) MinSize() fyne.Size {
@@ -207,6 +222,12 @@ func (r *bookCardRenderer) Refresh() {
     r.title.SetText(r.card.Title)
     r.author.SetText(r.card.Author)
     r.status.SetText(r.card.Status)
+    r.rating.SetText(r.card.Rating)
+    if r.card.Rating == "" {
+        r.rating.Hide()
+    } else {
+        r.rating.Show()
+    }
 
     r.Layout(r.card.Size())
     for _, object := range []fyne.CanvasObject{r.background, r.placeholderBackground, r.placeholderIcon, r.cover, r.track, r.fill} {
@@ -225,6 +246,7 @@ func (r *bookCardRenderer) Objects() []fyne.CanvasObject {
         r.track,
         r.fill,
         r.status,
+        r.rating,
     }
 }
 

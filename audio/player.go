@@ -219,6 +219,15 @@ func (p *Player) Err() error {
     return p.Streamer.Err()
 }
 
+func (p *Player) Waiting() bool {
+    if p == nil || p.Closed {
+        return false
+    }
+
+    waiter, ok := p.Streamer.(interface{ Waiting() bool })
+    return ok && waiter.Waiting()
+}
+
 func (p *Player) Close() error {
     if p == nil || p.Closed {
         return nil

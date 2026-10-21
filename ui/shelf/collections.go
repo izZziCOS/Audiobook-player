@@ -17,12 +17,14 @@ import (
 
     "github.com/izzzicos/audiobook-player/library"
     "github.com/izzzicos/audiobook-player/ui/kit"
+    "github.com/izzzicos/audiobook-player/ui/offline"
     "github.com/izzzicos/audiobook-player/ui/userdata"
 )
 
 const (
     collectionButtonLength  = 24
     collectionMessageLength = 64
+    removeTitleLength       = 48
     collectionTip           = "A book can be in as many collections as you like."
 )
 
@@ -148,16 +150,23 @@ func (s *Shelf) cardMenu(entry *shelfEntry) *fyne.Menu {
         fyne.NewMenuItem("Play", func() {
             s.open(entry)
         }),
+        fyne.NewMenuItem("About this book…", func() {
+            s.showAbout(entry)
+        }),
+        fyne.NewMenuItem("Edit details…", func() {
+            s.editDetails(entry)
+        }),
         collections,
     }
+    items = append(items, s.downloadItems(entry)...)
     if current := s.collection; current != "" {
         items = append(items, fyne.NewMenuItem(fmt.Sprintf("Remove from “%s”", current), func() {
             s.data.SetInCollection(current, entry.path, false)
             s.showShelf()
         }))
     }
-    items = append(items, fyne.NewMenuItemSeparator(), fyne.NewMenuItem("Remove from library", func() {
-        s.remove(entry)
+    items = append(items, fyne.NewMenuItemSeparator(), fyne.NewMenuItem("Remove from library…", func() {
+        s.confirmRemove(entry, nil)
     }))
 
     return fyne.NewMenu("", items...)
@@ -263,6 +272,30 @@ func (s *Shelf) confirmDelete(name string) {
         },
         s.window,
     )
+}
+
+func (s *Shelf) confirmRemove(entry *shelfEntry, removed func()) {
+    message := "Your files aren't deleted. Use Add books to bring the book back where you left off."
+    if s.Offline.State(entry.path) != offline.NotDownloaded {
+        message = "Its offline copy on this computer is deleted, but the files on your drive or server aren't. Use Add books to bring the book back where you left off."
+    }
+    confirm := dialog.NewConfirm(
+        fmt.Sprintf("Remove “%s” from your library?", shortened(entry.title, removeTitleLength)),
+        message,
+        func(confirmed bool) {
+            if confirmed {
+                s.remove(entry)
+                if removed != nil {
+                    removed()
+                }
+            }
+        },
+        s.window,
+    )
+    confirm.SetConfirmText("Remove")
+    confirm.SetDismissText("Cancel")
+    confirm.SetConfirmImportance(widget.DangerImportance)
+    confirm.Show()
 }
 
 func emptyCollectionText(name string) string {

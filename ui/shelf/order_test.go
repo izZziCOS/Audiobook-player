@@ -8,6 +8,7 @@ import (
     "fyne.io/fyne/v2/test"
     "fyne.io/fyne/v2/widget"
 
+    "github.com/izzzicos/audiobook-player/online"
     "github.com/izzzicos/audiobook-player/ui/internal/testbooks"
     "github.com/izzzicos/audiobook-player/ui/kit"
     "github.com/izzzicos/audiobook-player/ui/userdata"
@@ -146,5 +147,36 @@ func TestNothingMatchesTheFilter(t *testing.T) {
         if got := noMatchesText(check.filter, check.query); got != check.want {
             t.Errorf("%s / %q: got %q, want %q", check.filter, check.query, got, check.want)
         }
+    }
+}
+
+func TestRatingsOnCardsAndSortingByRating(t *testing.T) {
+    s, _ := newTestShelf(t)
+    root, hobbit := testbooks.Library(t)
+    s.AddFrom([]string{root})
+    dune := filepath.Join(root, "Herbert", "Dune.m4b")
+    messiah := filepath.Join(root, "Herbert", "Dune Messiah.m4b")
+
+    s.data.LinkOnline(hobbit, "us", online.Edition{ASIN: "B0099SMFVQ", Title: "The Hobbit", Rating: 4.8, Ratings: 41000})
+    s.data.LinkOnline(dune, "us", online.Edition{ASIN: "B002V1OF70", Title: "Dune", Rating: 4.6, Ratings: 150000})
+    s.data.LinkOnline(messiah, "us", online.Edition{ASIN: "B002V5D7RU", Title: "Dune Messiah", Rating: 5, Ratings: 12})
+    s.Refresh()
+
+    if card, _ := s.Card(dune); card.Rating != "★ 4.6 · 150k" {
+        t.Fatalf("the card shows %q", card.Rating)
+    }
+
+    s.setShelfSort(sortRating)
+    if titles := shelfTitles(s); !slices.Equal(titles, []string{"The Hobbit", "Dune", "Dune Messiah"}) {
+        t.Fatalf("sorted by rating: %v, want well-rated books before a 5.0 from 12 people", titles)
+    }
+
+    s.data.UnlinkOnline(dune)
+    s.Refresh()
+    if card, _ := s.Card(dune); card.Rating != "" {
+        t.Fatalf("an unlinked book shouldn't show a rating, got %q", card.Rating)
+    }
+    if titles := shelfTitles(s); titles[len(titles)-1] != "Dune" {
+        t.Fatalf("books without a rating should come last, got %v", titles)
     }
 }

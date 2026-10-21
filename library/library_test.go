@@ -430,3 +430,56 @@ func TestOffsetOf(t *testing.T) {
         }
     }
 }
+
+func TestPrepareCover(t *testing.T) {
+    prepared, err := PrepareCover(pngData(t, 2000))
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    config, format, err := image.DecodeConfig(bytes.NewReader(prepared))
+    if err != nil || format != "jpeg" || config.Width != customCoverSide || config.Height != customCoverSide {
+        t.Fatalf("got a %dx%d %s image (%v), want a %dpx JPEG", config.Width, config.Height, format, err, customCoverSide)
+    }
+
+    if _, err := PrepareCover([]byte("not an image")); err == nil {
+        t.Fatal("expected an error for data that is not an image")
+    }
+}
+
+func TestOverride(t *testing.T) {
+    tags := Metadata{Title: "Chapter 1", Album: "The Hobit", Artist: "Tolkein"}
+
+    if kept := tags.Override("", ""); kept.Album != "The Hobit" || kept.Artist != "Tolkein" {
+        t.Fatalf("empty corrections should keep the tags, got %+v", kept)
+    }
+
+    corrected := tags.Override("The Hobbit", "J. R. R. Tolkien")
+    book := SingleFile(filepath.Join(t.TempDir(), "track01.mp3"))
+    if book.Title(corrected) != "The Hobbit" || corrected.Artist != "J. R. R. Tolkien" || corrected.Title != "Chapter 1" {
+        t.Fatalf("got %q by %q, part %q", book.Title(corrected), corrected.Artist, corrected.Title)
+    }
+
+    folder := &Book{Folder: "/books/the_hobbit", Parts: []string{"/books/the_hobbit/1.mp3", "/books/the_hobbit/2.mp3"}}
+    if title := folder.Title(Metadata{}.Override("The Hobbit", "")); title != "The Hobbit" {
+        t.Fatalf("a corrected title should win over the folder name, got %q", title)
+    }
+}
+
+func TestReadASIN(t *testing.T) {
+    path := filepath.Join(t.TempDir(), "part.mp3")
+    writeFile(t, path, id3Tag(
+        id3TextFrame("TALB", "Frankenstein"),
+        id3TextFrame("TXXX", "ASIN\x00b00fqrcm9o"),
+    ))
+    if asin := ReadMetadata(path).ASIN; asin != "B00FQRCM9O" {
+        t.Fatalf("got ASIN %q from the ID3 tag", asin)
+    }
+
+    if asin := readASIN(map[string]interface{}{"asin": "not an asin"}); asin != "" {
+        t.Fatalf("got ASIN %q from a value that isn't one", asin)
+    }
+    if asin := readASIN(map[string]interface{}{"ASIN": "B071V2RNK3"}); asin != "B071V2RNK3" {
+        t.Fatalf("got ASIN %q from an MP4 or Vorbis field", asin)
+    }
+}

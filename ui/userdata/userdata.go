@@ -48,6 +48,8 @@ type saved struct {
     Stats       *stats.Log              `json:"stats"`
     LastBook    LastBook                `json:"lastBook"`
     Collections []Collection            `json:"collections,omitempty"`
+    Edits       map[string]BookEdit     `json:"edits,omitempty"`
+    Downloads   map[string]Download     `json:"downloads,omitempty"`
 }
 
 type Data struct {
@@ -61,6 +63,9 @@ type Data struct {
     OnSaveError func(error)
 
     collections    []Collection
+    edits          map[string]BookEdit
+    downloads      map[string]Download
+    online         map[string]OnlineDetails
     file           string
     dirty          bool
     saveErrorShown bool
@@ -127,6 +132,8 @@ func (d *Data) collect() saved {
         Stats:       d.Stats,
         LastBook:    d.LastBook,
         Collections: d.collections,
+        Edits:       d.edits,
+        Downloads:   d.downloads,
     }
 
     for path := range d.Ignored {
@@ -160,6 +167,7 @@ func (d *Data) Load(prefs fyne.Preferences) string {
     }
 
     d.apply(normalize(data))
+    d.loadOnline()
     if d.Stats.Compact(time.Now(), stats.KeepDays) {
         d.MarkDirty()
     }
@@ -207,6 +215,18 @@ func (d *Data) apply(data saved) {
     d.LastBook = data.LastBook
     d.Library = data.Library
     d.collections = data.Collections
+
+    d.edits = data.Edits
+    if d.edits == nil {
+        d.edits = map[string]BookEdit{}
+    }
+
+    d.online = map[string]OnlineDetails{}
+
+    d.downloads = data.Downloads
+    if d.downloads == nil {
+        d.downloads = map[string]Download{}
+    }
 }
 
 func normalize(data saved) saved {
@@ -250,6 +270,21 @@ func normalize(data saved) saved {
             data.Collections[i].Books[j] = library.Normalize(data.Collections[i].Books[j])
         }
     }
+
+    edits := map[string]BookEdit{}
+    for key, edit := range data.Edits {
+        edits[library.Normalize(key)] = edit
+    }
+    data.Edits = edits
+
+    downloads := map[string]Download{}
+    for key, download := range data.Downloads {
+        for i := range download.Parts {
+            download.Parts[i].Source = library.Normalize(download.Parts[i].Source)
+        }
+        downloads[library.Normalize(key)] = download
+    }
+    data.Downloads = downloads
 
     if data.LastBook.Folder != "" {
         data.LastBook.Folder = library.Normalize(data.LastBook.Folder)

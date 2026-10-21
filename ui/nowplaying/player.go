@@ -14,9 +14,14 @@ import (
 
     "github.com/izzzicos/audiobook-player/audio"
     "github.com/izzzicos/audiobook-player/library"
+    "github.com/izzzicos/audiobook-player/ui/about"
+    "github.com/izzzicos/audiobook-player/ui/details"
     "github.com/izzzicos/audiobook-player/ui/kit"
+    "github.com/izzzicos/audiobook-player/ui/offline"
     "github.com/izzzicos/audiobook-player/ui/userdata"
 )
+
+const waitingText = "Waiting for the drive or server…"
 
 const (
     preferenceVolume     = "volume"
@@ -26,6 +31,11 @@ const (
 
 type Player struct {
     OnBookOpened func(key string)
+    EditDetails  func(key string, original details.Original)
+    FolderBookOf func(file string) string
+    ShowAbout    func(key string, book about.Book)
+    OnPaused     func()
+    Offline      *offline.Store
 
     window fyne.Window
     prefs  fyne.Preferences
@@ -48,6 +58,8 @@ type Player struct {
     previousButton   *roundButton
     nextButton       *roundButton
     partsButton      *widget.Button
+    editButton       *widget.Button
+    aboutButton      *widget.Button
     sleepButton      *widget.Button
 
     audio          *audio.Player
@@ -60,10 +72,13 @@ type Player struct {
     chapterIndex   int
     sleep          sleepState
     metadata       library.Metadata
+    tags           library.Metadata
+    foundCover     *library.Cover
     chapters       []library.Chapter
     media          mediaControls
     mediaStatus    publishedStatus
     seeking        atomic.Bool
+    waiting        bool
 }
 
 func New(window fyne.Window, prefs fyne.Preferences, data *userdata.Data, picker *kit.Picker, async func(func())) *Player {
@@ -168,6 +183,21 @@ func (p *Player) Play() {
 func (p *Player) Tick(now time.Time) {
     p.refreshProgress()
     p.tickSleepTimer(now)
+    p.showWaiting()
+}
+
+func (p *Player) showWaiting() {
+    waiting := p.audio != nil && p.playing && p.audio.Waiting()
+    if waiting == p.waiting {
+        return
+    }
+
+    p.waiting = waiting
+    if waiting {
+        p.setSubtitle(waitingText)
+    } else if p.book != nil {
+        p.setSubtitle(p.subtitleText())
+    }
 }
 
 func (p *Player) HandleKey(event *fyne.KeyEvent) {

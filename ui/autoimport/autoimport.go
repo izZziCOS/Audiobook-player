@@ -1,6 +1,7 @@
 package autoimport
 
 import (
+    "errors"
     "fmt"
     "os"
     "sync/atomic"
@@ -40,6 +41,7 @@ type Importer struct {
     folder     string
     lastImport time.Time
     importing  atomic.Bool
+    network    atomic.Bool
 }
 
 func New(window fyne.Window, prefs fyne.Preferences, data *userdata.Data, books *shelf.Shelf, picker *kit.Picker, async func(func())) *Importer {
@@ -107,6 +109,8 @@ func (im *Importer) Folder() string {
     return im.folder
 }
 
+var reachable = library.Reachable
+
 func exists(path string) bool {
     _, err := os.Stat(path)
     return err == nil
@@ -138,8 +142,11 @@ func (im *Importer) chooseFolder() {
 
 const (
     Interval          = 2 * time.Minute
+    networkInterval   = 10 * time.Minute
     autoImportSettle  = 30 * time.Second
     libraryTabRecheck = 30 * time.Second
+    networkTabRecheck = 2 * time.Minute
+    tickSlack         = 10 * time.Second
 )
 
 type foundBook struct {
@@ -159,6 +166,7 @@ func (im *Importer) SetFolder(folder string) {
 
     im.folder = folder
     im.lastImport = time.Time{}
+    im.network.Store(false)
     im.prefs.SetString(preferenceWatchedFolder, folder)
     im.updateFolder()
     im.Scan()
@@ -170,15 +178,6 @@ func (im *Importer) Scan() {
         return
     }
 
-    if !exists(folder) {
-        for _, candidate := range library.OtherDrives(folder) {
-            if exists(candidate) {
-                im.SetFolder(candidate)
-                return
-            }
-        }
-    }
-
     if !im.importing.CompareAndSwap(false, true) {
         return
     }
@@ -186,6 +185,24 @@ func (im *Importer) Scan() {
     im.setStatus("Looking for new books…")
 
     im.async(func() {
+        if err := reachable(folder, library.ResponseTimeout); err != nil {
+            moved := ""
+            if !errors.Is(err, library.ErrNotResponding) {
+                moved = movedDrive(folder)
+            }
+
+            fyne.Do(func() {
+                im.importing.Store(false)
+                if moved != "" && folder == im.folder {
+                    im.SetFolder(moved)
+                    return
+                }
+                im.showUnreachable(folder, err)
+            })
+            return
+        }
+
+        im.network.Store(library.IsNetwork(folder))
         found, err := findImportableBooks(folder)
 
         fyne.Do(func() {
@@ -195,8 +212,48 @@ func (im *Importer) Scan() {
     })
 }
 
+func movedDrive(folder string) string {
+    for _, candidate := range library.OtherDrives(folder) {
+        if exists(candidate) {
+            return candidate
+        }
+    }
+
+    return ""
+}
+
+func (im *Importer) showUnreachable(folder string, err error) {
+    if folder != im.folder {
+        return
+    }
+
+    im.lastImport = time.Now()
+    checked := im.lastImport.Format("15:04")
+    if errors.Is(err, library.ErrNotResponding) {
+        im.setStatus(fmt.Sprintf("The library folder isn't responding (checked at %s). Check the connection to the drive or server, for example your VPN.", checked))
+        return
+    }
+
+    im.setStatus(fmt.Sprintf("The library folder isn't available (checked at %s). If it's on a drive or server, check that it's connected.", checked))
+}
+
+func (im *Importer) due(local, network time.Duration) bool {
+    interval := local
+    if im.network.Load() {
+        interval = network
+    }
+
+    return time.Since(im.lastImport) >= interval-tickSlack
+}
+
+func (im *Importer) ScanIfDue() {
+    if im.due(Interval, networkInterval) {
+        im.Scan()
+    }
+}
+
 func (im *Importer) ScanIfStale() {
-    if time.Since(im.lastImport) >= libraryTabRecheck {
+    if im.due(libraryTabRecheck, networkTabRecheck) {
         im.Scan()
     }
 }
@@ -253,13 +310,16 @@ func (im *Importer) applyImport(folder string, found []foundBook, err error) {
         }
     }
 
-    im.shelf.Import(added)
-
-    status := fmt.Sprintf("Last checked at %s · %s", checked, kit.CountPhrase(len(added), "new book", "new books", "no new books"))
-    if copying > 0 {
-        status += " · " + kit.CountPhrase(copying, "book is still being copied", "books are still being copied", "")
-    }
-    im.setStatus(status)
+    im.shelf.Import(added, func(result shelf.ImportResult) {
+        status := fmt.Sprintf("Last checked at %s · %s", checked, kit.CountPhrase(result.Added, "new book", "new books", "no new books"))
+        if copies := len(result.Copies); copies > 0 {
+            status += " · " + kit.CountPhrase(copies, "copy of a book already in your library was skipped", "copies of books already in your library were skipped", "")
+        }
+        if copying > 0 {
+            status += " · " + kit.CountPhrase(copying, "book is still being copied", "books are still being copied", "")
+        }
+        im.setStatus(status)
+    })
 }
 
 func (im *Importer) Load() {
