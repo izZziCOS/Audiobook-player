@@ -7,6 +7,7 @@ import (
     "path/filepath"
 
     "github.com/izzzicos/audiobook-player/library"
+    "github.com/izzzicos/audiobook-player/vfs"
 )
 
 type TidyPlan struct {
@@ -82,14 +83,14 @@ func (p TidyPlan) Find() Leftovers {
         }
 
         if _, checked := present[book]; !checked {
-            _, err := os.Stat(book)
+            _, err := vfs.Stat(book)
             present[book] = err == nil
         }
         if !present[book] {
             continue
         }
 
-        info, err := os.Stat(part)
+        info, err := vfs.Stat(part)
         if err != nil || info.Size() != cached.Size || info.ModTime().UnixNano() != cached.Modified {
             leftovers.parts[part] = cached
         }
@@ -121,11 +122,11 @@ func owner(part string, library map[string]bool) (string, bool) {
 }
 
 func gone(path string) bool {
-    if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) || library.Unavailable(path) {
+    if _, err := vfs.Stat(path); !errors.Is(err, os.ErrNotExist) || library.Unavailable(path) {
         return false
     }
 
-    _, err := os.Stat(filepath.Dir(path))
+    _, err := vfs.Stat(filepath.Dir(path))
     return err == nil
 }
 

@@ -20,6 +20,7 @@ import (
     "github.com/izzzicos/audiobook-player/library"
     "github.com/izzzicos/audiobook-player/ui/kit"
     "github.com/izzzicos/audiobook-player/ui/userdata"
+    "github.com/izzzicos/audiobook-player/vfs"
 )
 
 const (
@@ -383,7 +384,7 @@ func (s *Store) download(book string, existing userdata.Download, current *job, 
 
     var needed int64
     for _, path := range source.Parts {
-        info, err := os.Stat(path)
+        info, err := vfs.Stat(path)
         if err != nil {
             return err
         }
@@ -456,7 +457,7 @@ func (s *Store) record(book string, download userdata.Download) {
 }
 
 func copyPart(part userdata.DownloadPart, destination string, current *job, report func()) error {
-    in, err := os.Open(part.Source)
+    in, err := vfs.Open(part.Source)
     if err != nil {
         return err
     }

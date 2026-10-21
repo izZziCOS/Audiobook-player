@@ -1,6 +1,7 @@
 package nowplaying
 
 import (
+    "time"
     "fmt"
 
         "fyne.io/fyne/v2"
@@ -128,7 +129,13 @@ func (p *Player) showBook(book *library.Book, position float64) {
             return
         }
 
+        p.pausedAt = time.Time{}
+        if saved, found := p.data.Positions[book.Key()]; found && saved.Listened > 0 && position > 0 {
+            p.pausedAt = time.Unix(saved.Listened, 0)
+        }
+
         p.book = book
+        p.selectSpeed(p.bookSpeed(book.Key()))
         p.updateBookInfo()
 
         if position > 0 {
@@ -173,6 +180,7 @@ func (p *Player) goToPart(index int, play bool, then func()) {
         }
 
         book.Index = index
+        p.pausedAt = time.Time{}
         p.updateBookInfo()
         if then != nil {
             then()

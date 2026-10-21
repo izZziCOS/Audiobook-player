@@ -711,3 +711,75 @@ func TestAResetReachesYourOtherComputers(t *testing.T) {
         t.Fatalf("the laptop should start the book from the beginning too, got %+v", position)
     }
 }
+
+func TestALibraryOnTheMediaServer(t *testing.T) {
+    ui := newTestUI(t)
+    root, hobbit, server := testbooks.RemoteLibrary(t)
+    if _, err := os.Stat(root); !os.IsNotExist(err) {
+        t.Fatal("setup: the server's folder must not exist on this computer")
+    }
+    testbooks.BackdateRemote(t, server)
+
+    ui.importer.SetFolder(root)
+    if cards := ui.shelf.Cards(); len(cards) != 3 {
+        t.Fatalf("the books on the server should be imported, got %d", len(cards))
+    }
+    if card, _ := ui.shelf.Card(hobbit); card.Title != "The Hobbit" || !strings.HasPrefix(card.Status, "Not started") {
+        t.Fatalf("the card shows %q, %q", card.Title, card.Status)
+    }
+
+    if err := ui.playFromShelf(hobbit); err != nil || ui.player.Book() == nil || ui.player.Book().Key() != hobbit {
+        t.Fatalf("a book on the server should play, got %v", err)
+    }
+    ui.player.MoveTo(filepath.Join(hobbit, "Part 2.flac"), 0.5)
+    ui.player.TogglePlay()
+
+    ui.offline.Start(hobbit)
+    if _, found := ui.data.Download(hobbit); !found || ui.offline.Local(hobbit) == nil {
+        t.Fatal("a book on the server should download for offline listening")
+    }
+
+    server.Disconnect()
+    ui.shelf.Reload(filepath.Join(root, "Herbert", "Dune.m4b"))
+    if card, _ := ui.shelf.Card(filepath.Join(root, "Herbert", "Dune.m4b")); card.Status != "Not connected" {
+        t.Fatalf("with the server away, a book that isn't downloaded should say so, got %q", card.Status)
+    }
+    ui.shelf.Reload(hobbit)
+    if card, _ := ui.shelf.Card(hobbit); card.Status == "Not connected" || card.Status == "Not found" {
+        t.Fatalf("the downloaded book should stay usable, got %q", card.Status)
+    }
+
+    plan := ui.data.PlanTidy()
+    ui.data.Forget(plan.Find())
+    if saved := ui.data.Positions[hobbit]; saved.Part != filepath.Join(hobbit, "Part 2.flac") {
+        t.Fatalf("nothing should be forgotten while the server is away, got %+v", saved)
+    }
+}
+
+func TestSyncingThroughTheMediaServer(t *testing.T) {
+    shared, _, server := testbooks.RemoteLibrary(t)
+
+    laptop := newTestUI(t)
+    laptopRoot, laptopHobbit := testbooks.Library(t)
+    laptop.shelf.AddFrom([]string{laptopRoot})
+    laptop.syncer.SetFolder(shared)
+
+    desktop := newTestUI(t)
+    desktopRoot, desktopHobbit := testbooks.Library(t)
+    desktop.shelf.AddFrom([]string{desktopRoot})
+    desktop.syncer.SetFolder(shared)
+
+    laptop.data.Positions[laptopHobbit] = userdata.Position{Part: filepath.Join(laptopHobbit, "Part 2.flac"), Position: 0.5, Listened: time.Now().Add(time.Minute).Unix()}
+    laptop.syncer.Write()
+    desktop.syncer.Pull(nil)
+
+    if synced := desktop.data.Positions[desktopHobbit]; synced.Part != filepath.Join(desktopHobbit, "Part 2.flac") {
+        t.Fatalf("the place should travel through the server, got %+v", synced)
+    }
+
+    server.Disconnect()
+    laptop.syncer.Write()
+    if !strings.Contains(laptop.syncer.Status(), "isn't responding") {
+        t.Fatalf("with the server away the status should say so, got %q", laptop.syncer.Status())
+    }
+}

@@ -300,13 +300,12 @@ func (s *Shelf) shelfProgress(entry *shelfEntry) (float64, string) {
         return 0, "Not found"
     }
 
-    saved, started := s.data.Positions[entry.path]
-    if saved.Finished {
+    if s.data.Positions[entry.path].Finished {
         return 1, "Finished"
     }
 
-    book := entry.book
-    if book == nil || !book.HasDurations() {
+    total, elapsed, known := s.listened(entry)
+    if !known {
         if s.readingState(entry) == stateInProgress {
             return 0, "In progress"
         }
@@ -314,23 +313,39 @@ func (s *Shelf) shelfProgress(entry *shelfEntry) (float64, string) {
         return 0, "Not started"
     }
 
-    total := book.TotalDuration()
-    elapsed := 0.0
-    if started {
-        index, found := book.Find(saved.Part)
-        if found {
-            elapsed = book.OffsetOf(index) + saved.Position
-        }
-    }
-
     if elapsed <= 0 || total <= 0 {
         return 0, "Not started · " + kit.FormatLength(total)
     }
 
     fraction := min(elapsed/total, 1)
-    remaining := max(total-elapsed, 0) / s.speed()
+    remaining := max(total-elapsed, 0) / s.speed(entry.path)
 
     return fraction, fmt.Sprintf("%d%% · %s left", int(fraction*100), kit.FormatLength(remaining))
+}
+
+func (s *Shelf) listened(entry *shelfEntry) (total, elapsed float64, known bool) {
+    book := entry.book
+    if book == nil || !book.HasDurations() {
+        return 0, 0, false
+    }
+
+    total = book.TotalDuration()
+    if saved, started := s.data.Positions[entry.path]; started {
+        if index, found := book.Find(saved.Part); found {
+            elapsed = book.OffsetOf(index) + saved.Position
+        }
+    }
+
+    return total, elapsed, true
+}
+
+func (s *Shelf) timeLeft(entry *shelfEntry) (float64, bool) {
+    total, elapsed, known := s.listened(entry)
+    if !known {
+        return 0, false
+    }
+
+    return max(total-elapsed, 0) / s.speed(entry.path), true
 }
 
 func (s *Shelf) loadShelfInfo(entries []*shelfEntry) {

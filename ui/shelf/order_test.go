@@ -209,3 +209,56 @@ func TestResettingProgress(t *testing.T) {
         t.Fatalf("the card shows %q", card.Status)
     }
 }
+
+func TestSortingByLengthAndTimeLeft(t *testing.T) {
+    s, _ := newTestShelf(t)
+    root, hobbit := testbooks.Library(t)
+    s.AddFrom([]string{root})
+    dune := filepath.Join(root, "Herbert", "Dune.m4b")
+    messiah := filepath.Join(root, "Herbert", "Dune Messiah.m4b")
+
+    hobbitLength, _, _ := s.listened(s.find(hobbit))
+    duneLength, _, known := s.listened(s.find(dune))
+    if !known || hobbitLength == duneLength {
+        t.Fatal("setup: the books' lengths should be known and differ")
+    }
+
+    s.setShelfSort(sortLength)
+    titles := shelfTitles(s)
+    if hobbitLength < duneLength && titles[0] != "The Hobbit" || hobbitLength > duneLength && titles[2] != "The Hobbit" {
+        t.Fatalf("sorted by length: %v (Hobbit %v, Dune %v)", titles, hobbitLength, duneLength)
+    }
+
+    s.data.Positions[dune] = userdata.Position{Part: dune, Position: duneLength * 0.9, Listened: 1}
+    s.data.Positions[messiah] = userdata.Position{Part: messiah, Listened: 2, Finished: true}
+    s.setShelfSort(sortTimeLeft)
+    if titles := shelfTitles(s); titles[0] != "Dune" || titles[2] != "Dune Messiah" {
+        t.Fatalf("sorted by time left: %v, want the nearly finished book first and the finished one last", titles)
+    }
+}
+
+func TestTimeLeftUsesEachBooksSpeed(t *testing.T) {
+    s, _ := newTestShelf(t)
+    root, hobbit := testbooks.Library(t)
+    s.AddFrom([]string{root})
+    dune := filepath.Join(root, "Herbert", "Dune.m4b")
+
+    normal, _ := s.timeLeft(s.find(dune))
+    s.SpeedOf = func(path string) float64 {
+        if path == dune {
+            return 2
+        }
+        return 1
+    }
+    fast, _ := s.timeLeft(s.find(dune))
+    if !closeEnough(fast, normal/2) {
+        t.Fatalf("at 2× the time left should halve, got %v from %v", fast, normal)
+    }
+    if same, _ := s.timeLeft(s.find(hobbit)); same == 0 {
+        t.Fatal("other books keep their own speed")
+    }
+}
+
+func closeEnough(a, b float64) bool {
+    return a-b < 0.01 && b-a < 0.01
+}

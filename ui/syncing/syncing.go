@@ -23,9 +23,9 @@ import (
     "github.com/ncruces/zenity"
 
     "github.com/izzzicos/audiobook-player/library"
-    "github.com/izzzicos/audiobook-player/store"
     "github.com/izzzicos/audiobook-player/ui/kit"
     "github.com/izzzicos/audiobook-player/ui/userdata"
+    "github.com/izzzicos/audiobook-player/vfs"
 )
 
 const (
@@ -179,7 +179,7 @@ func (s *Syncer) updateFolder() {
         s.folderActions.Hide()
         s.status.SetText("Your place in each book is only kept on this computer.")
     } else {
-        s.folderLabel.SetText(s.folder)
+        s.folderLabel.SetText(vfs.Display(s.folder))
         s.folderLabel.Importance = widget.MediumImportance
         s.folderActions.Show()
     }
@@ -289,7 +289,12 @@ func (s *Syncer) write(folder string, device Device) error {
         return err
     }
 
-    return store.Save(filepath.Join(s.syncDirectory(folder), device.ID+".json"), device)
+    data, err := json.Marshal(device)
+    if err != nil {
+        return err
+    }
+
+    return vfs.WriteAtomic(filepath.Join(s.syncDirectory(folder), device.ID+".json"), data)
 }
 
 func (s *Syncer) Flush() {
@@ -354,7 +359,7 @@ func (s *Syncer) read(folder, id string) ([]Device, error) {
         return nil, err
     }
 
-    entries, err := os.ReadDir(s.syncDirectory(folder))
+    entries, err := vfs.ReadDir(s.syncDirectory(folder))
     if errors.Is(err, os.ErrNotExist) {
         return nil, nil
     }
@@ -369,7 +374,7 @@ func (s *Syncer) read(folder, id string) ([]Device, error) {
             continue
         }
 
-        data, err := os.ReadFile(filepath.Join(s.syncDirectory(folder), name))
+        data, err := vfs.ReadFile(filepath.Join(s.syncDirectory(folder), name))
         if err != nil {
             continue
         }
@@ -505,4 +510,8 @@ func (s *Syncer) Tick(now time.Time) {
     if now.Sub(s.lastPull) >= pullEvery {
         s.Pull(nil)
     }
+}
+
+func (s *Syncer) Status() string {
+    return s.status.Text
 }

@@ -6,10 +6,10 @@ import (
     "errors"
     "fmt"
     "io"
-    "os"
     "slices"
     "strings"
     "unicode/utf16"
+    "github.com/izzzicos/audiobook-player/vfs"
 )
 
 const (
@@ -24,7 +24,7 @@ type Chapter struct {
 }
 
 func ReadChapters(path string) []Chapter {
-    file, err := os.Open(path)
+    file, err := vfs.Open(path)
     if err != nil {
         return nil
     }

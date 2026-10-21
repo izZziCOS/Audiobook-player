@@ -1,6 +1,7 @@
 package nowplaying
 
 import (
+    "time"
     "fmt"
 
         "fyne.io/fyne/v2/dialog"
@@ -136,6 +137,7 @@ func (p *Player) MoveTo(part string, seconds float64) bool {
 
 func (p *Player) seekInPart(seconds float64) {
     p.forgetSleepPosition()
+    p.pausedAt = time.Time{}
 
     if err := p.audio.SeekTo(seconds); err != nil {
         dialog.ShowError(err, p.window)

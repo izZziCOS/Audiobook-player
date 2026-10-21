@@ -1,11 +1,11 @@
 package library
 
 import (
-    "os"
     "regexp"
     "strings"
 
     "github.com/dhowden/tag"
+    "github.com/izzzicos/audiobook-player/vfs"
 )
 
 type Metadata struct {
@@ -25,7 +25,7 @@ func ReadMetadata(path string) (metadata Metadata) {
         }
     }()
 
-    file, err := os.Open(path)
+    file, err := vfs.Open(path)
     if err != nil {
         return Metadata{}
     }

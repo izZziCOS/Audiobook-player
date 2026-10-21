@@ -2,11 +2,11 @@ package library
 
 import (
     "fmt"
-    "os"
     "path/filepath"
     "runtime"
     "slices"
     "strings"
+    "github.com/izzzicos/audiobook-player/vfs"
 )
 
 type PartPrint struct {
@@ -31,7 +31,7 @@ func FingerprintOf(path string) (Fingerprint, error) {
 func FingerprintOfBook(book *Book) (Fingerprint, error) {
     fingerprint := Fingerprint{Name: filepath.Base(book.Key())}
     for _, part := range book.Parts {
-        info, err := os.Stat(part)
+        info, err := vfs.Stat(part)
         if err != nil {
             return Fingerprint{}, err
         }

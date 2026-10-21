@@ -1,15 +1,15 @@
 package shelf
 
 import (
-    "os"
 
     "github.com/izzzicos/audiobook-player/library"
+    "github.com/izzzicos/audiobook-player/vfs"
 )
 
 var reachable = library.Reachable
 
 func exists(path string) bool {
-    _, err := os.Stat(path)
+    _, err := vfs.Stat(path)
     return err == nil
 }
 

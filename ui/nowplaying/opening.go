@@ -2,7 +2,6 @@ package nowplaying
 
 import (
     "errors"
-    "os"
 
     "fyne.io/fyne/v2"
     "fyne.io/fyne/v2/dialog"
@@ -11,6 +10,7 @@ import (
 
     "github.com/izzzicos/audiobook-player/audio"
     "github.com/izzzicos/audiobook-player/library"
+    "github.com/izzzicos/audiobook-player/vfs"
 )
 
 const (
@@ -34,7 +34,7 @@ func (o *openedAudio) close() {
 }
 
 func openAudio(path string) (*openedAudio, error) {
-    file, err := os.Open(path)
+    file, err := vfs.Open(path)
     if err != nil {
         return nil, err
     }

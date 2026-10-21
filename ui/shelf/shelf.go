@@ -25,7 +25,7 @@ const preferenceLibrarySort = "librarySort"
 type Shelf struct {
     Open         func(path string) error
     Show         func()
-    Speed        func() float64
+    SpeedOf      func(path string) float64
     SyncProgress func()
     StartFolder  func() string
     EditDetails  func(path string, original details.Original)
@@ -149,12 +149,12 @@ func (s *Shelf) show() {
     }
 }
 
-func (s *Shelf) speed() float64 {
-    if s.Speed == nil {
+func (s *Shelf) speed(path string) float64 {
+    if s.SpeedOf == nil {
         return 1
     }
 
-    return s.Speed()
+    return s.SpeedOf(path)
 }
 
 func (s *Shelf) Cards() []Card {

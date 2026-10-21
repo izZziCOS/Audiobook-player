@@ -7,6 +7,8 @@ import (
     "runtime"
     "strings"
     "time"
+
+    "github.com/izzzicos/audiobook-player/vfs"
 )
 
 const ResponseTimeout = 4 * time.Second
@@ -28,12 +30,15 @@ func SkipFolder(name string) bool {
 func Reachable(path string, timeout time.Duration) error {
     result := make(chan error, 1)
     go func() {
-        _, err := os.Stat(path)
+        _, err := vfs.Stat(path)
         result <- err
     }()
 
     select {
     case err := <-result:
+        if errors.Is(err, vfs.ErrNotConnected) {
+            return ErrNotResponding
+        }
         return err
     case <-time.After(timeout):
         return ErrNotResponding
@@ -41,6 +46,10 @@ func Reachable(path string, timeout time.Duration) error {
 }
 
 func Unavailable(path string) bool {
+    if vfs.IsRemote(path) {
+        return !vfs.Connected(path)
+    }
+
     root := volumeRoot(path, runtime.GOOS)
     if root == "" {
         return false
@@ -100,6 +109,9 @@ func windowsVolume(path string) string {
 }
 
 func IsNetwork(path string) bool {
+    if vfs.IsRemote(path) {
+        return true
+    }
     if runtime.GOOS == "windows" && strings.HasPrefix(strings.ReplaceAll(path, "/", `\`), `\\`) {
         return true
     }

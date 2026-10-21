@@ -25,6 +25,7 @@ func (p *Player) TogglePlay() {
         p.audio.Pause()
         p.SavePosition()
     } else {
+        p.rewindAfterPause()
         p.audio.Play()
     }
 
@@ -34,6 +35,9 @@ func (p *Player) TogglePlay() {
 func (p *Player) setPlaying(playing bool) {
     paused := p.playing && !playing
     p.playing = playing
+    if paused {
+        p.pausedAt = p.clock()
+    }
     if paused && p.OnPaused != nil {
         defer p.OnPaused()
     }
@@ -71,6 +75,7 @@ func (p *Player) jumpTo(seconds float64) {
 
 func (p *Player) Seek(seconds float64) error {
     p.forgetSleepPosition()
+    p.pausedAt = time.Time{}
 
     if p.book == nil || !p.book.HasDurations() {
         return p.audio.SeekTo(seconds)
@@ -88,19 +93,23 @@ func (p *Player) Seek(seconds float64) error {
     return nil
 }
 
-func (p *Player) changeSpeed(value string) {
+func speedValue(value string) float64 {
     speed, err := strconv.ParseFloat(strings.TrimSuffix(value, "x"), 64)
     if err != nil || speed <= 0 {
-        speed = 1.0
+        return 1.0
     }
 
-    p.speed = speed
+    return speed
+}
+
+func (p *Player) changeSpeed(value string) {
+    p.speed = speedValue(value)
 
     if p.audio == nil {
         return
     }
 
-    p.audio.SetSpeed(speed)
+    p.audio.SetSpeed(p.speed)
     p.refreshProgress()
 }
 

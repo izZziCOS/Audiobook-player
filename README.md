@@ -17,8 +17,9 @@ A small desktop audiobook player for macOS and Windows (Linux works too), writte
 - Shows the book title, author and part names from the files' tags (ID3, FLAC and Vorbis comments), falling back to file and folder names.
 - **Ratings and descriptions from Audible**, if you turn them on: each book's rating with how many people rated it, its description, narrator and release date. See [About this book](#about-this-book).
 - **Edit details**: correct a book's title or author, or give it a cover image of your own, without renaming or retagging any files. See [Editing a book's details](#editing-a-books-details).
-- **Speed from 0.5x to 2.0x** in 0.1x steps, without changing the pitch of the voice.
-- Skip 30 seconds back or forward. The remaining time takes the playback speed into account.
+- **Speed from 0.5x to 2.0x** in 0.1x steps, without changing the pitch of the voice. **Each book remembers its own speed**: the speed you choose is kept for the book you're listening to, and books you haven't set a speed for use the speed you chose last. The time left, in Now Playing and on the Library cards, uses each book's own speed.
+- Skip 30 seconds back or forward.
+- **Goes back a little after a pause**, so you can pick up the thread: 2 seconds after a pause of a minute, 5 after five minutes, 10 after an hour, 20 after a few hours and 30 after a day or more, counting from when you last listened even if you closed the app in between. It doesn't go back if you moved somewhere yourself after pausing. Turn it off in **Settings → Playback**.
 - **Sleep timer**: the moon button next to the speed stops playback after 5 to 90 minutes, at the **end of the chapter** (books with chapters) or at the **end of this part** (books of several parts). It shows the time left, taking the playback speed into account, only counts down while a book is playing, and fades the volume out over the last 10 seconds before pausing. Stopping at the end of a chapter or part leaves the book at the start of the next one, so pressing play carries straight on. If you skip into another chapter, the timer stops at the end of that one instead.
 - Shows cover art: an image with the same name as the audio file, else artwork embedded in the file, else `cover`, `folder` or `front` `.jpg`/`.png`, else the first image in the folder.
 - A warm light and dark look. It follows your system setting, or you can choose Light or Dark in **Settings**. The Now Playing screen is tinted with the colours of the book's cover. On Windows the title bar turns light or dark to match, and on Windows 11 the title bar and window border take the app's own colours.
@@ -66,6 +67,8 @@ The **Library** tab shows every book you've added as a card with its cover, titl
   - **Title**: A to Z, ignoring case and accents, with `Book 2` before `Book 10`;
   - **Author**: A to Z by author, then by title. Books without an author come last;
   - **Progress**: books in progress first, furthest along first, then books you haven't started, then finished ones;
+  - **Length**: shortest book first. Books whose length isn't known yet come last;
+  - **Time left**: the book you're closest to finishing first, at each book's own speed. Finished books come last;
   - **Rating**: highest Audible rating first. Books rated by fewer than 100 people come after the others, so a 5.0 from three people doesn't top the list, and books without a rating come last.
 
   The order you choose is remembered. The filter always starts at **All**, so books never seem to be missing when you open the app.
@@ -143,11 +146,17 @@ A book whose files changed in the last 30 seconds is left until the next check, 
 
 #### Books on a NAS or network share
 
-You can keep your audiobooks on a NAS, such as a Synology, or any computer that shares folders, and listen from it over your home network or a VPN such as WireGuard:
+You can keep your audiobooks on a NAS, such as a Synology, or any computer that shares folders over SMB, and listen from it at home or away. The easiest way is to let the app connect by itself, with nothing to set up in Finder, File Explorer or a VPN app:
 
 1. Share the folder over SMB. On a Synology this is on by default (**Control Panel → File Services**).
-2. Connect to it on your computer. On a Mac, use **Finder → Go → Connect to Server** with `smb://` and the NAS's address, for example `smb://10.0.0.5/audiobooks`. On Windows, use **Map network drive** with `\\10.0.0.5\audiobooks`.
-3. Choose the shared folder in **Settings → Library folder**.
+2. In **Settings → Media server**, enter the server's address (for example `192.168.1.10`), the shared folder's name (for example `audiobooks`), optionally a folder inside it (for example `Books`), and the username and password for the server. To listen away from home, also **Import WireGuard file…**: the `.conf` file your WireGuard server gives you for this computer.
+3. Click **Connect**, then **Use as library folder**, and **Sync through it** if you want your place synced between computers.
+
+At home the app connects to the server directly. When it can't, for example when you're away, it connects through WireGuard by itself. The tunnel runs inside the app, only for the app's own connection to the server: there's no VPN app to install, no administrator permission, and the rest of the computer's traffic isn't affected. The status line says whether it's connected *on your home network* or *through WireGuard*, or what's wrong, such as a wrong password or shared folder name, and the app keeps trying in the background.
+
+The password and the WireGuard key are kept in the computer's keychain (Keychain on macOS, Credential Manager on Windows, the Secret Service on Linux), never in the app's files. To set up another computer, use **Export connection file…** and open the file with **Import connection file…** there; only the password has to be entered again. The file contains the WireGuard key, so keep it private.
+
+You can also connect to the share yourself and choose it as an ordinary folder: on a Mac, **Finder → Go → Connect to Server** with `smb://` and the server's address, for example `smb://10.0.0.5/audiobooks`; on Windows, **Map network drive** with `\\10.0.0.5\audiobooks`; then choose it in **Settings → Library folder**.
 
 Books play straight from the share. Covers and part lengths are remembered on your computer, so the Library opens without reading every book over the network. When the VPN is off or the NAS is asleep, nothing freezes the window: books show `Not connected`, the library folder's status says the folder isn't available or isn't responding, and nothing about your books is forgotten.
 
@@ -187,9 +196,11 @@ Everything the app remembers stays on your computer, in the app's folder. The on
 
 | System | Folder |
 |---|---|
-| Windows | `%APPDATA%\fyne\com.izzzicos.audiobookplayer` |
-| macOS | `~/Library/Preferences/fyne/com.izzzicos.audiobookplayer` |
-| Linux | `~/.config/fyne/com.izzzicos.audiobookplayer` |
+| Windows | `%APPDATA%\fyne\com.izzzicos.audiobookplayer\Data` |
+| macOS | `~/Library/Preferences/fyne/com.izzzicos.audiobookplayer/Data` |
+| Linux | `~/.config/fyne/com.izzzicos.audiobookplayer/Data` |
+
+`preferences.json`, with your settings, is one level up, where Fyne keeps it. Earlier versions kept everything in that upper folder; the files are moved into `Data` the first time this version starts.
 
 - `library.json` holds your library, where you are in each book and your listening statistics. It is saved by writing a complete new copy and then swapping it in, so a crash or power cut while saving can't leave a half-written file.
 - `backups/` keeps a copy of `library.json` from each of the last 7 days. If `library.json` is ever unreadable, the app restores the newest good backup and tells you. If there is no backup, it keeps the damaged file aside instead of overwriting it.
@@ -207,7 +218,7 @@ Everything the app remembers stays on your computer, in the app's folder. The on
 - **Edited details** of books that have been deleted from the disk are forgotten, along with any covers nothing uses any more.
 - **Daily statistics** older than a year are folded into one summary. Total listening time, average speed and listening streaks stay exactly the same; the charts only show the last 26 weeks anyway. Each book's listening time and finished books are kept, because **Most listened** and **Books finished** use them.
 
-To move to a new computer, copy the whole folder. Books that end up somewhere else are found again automatically (see below).
+To move to a new computer, copy the whole `com.izzzicos.audiobookplayer` folder. Books that end up somewhere else are found again automatically (see below).
 
 Data from earlier versions, which kept everything in `preferences.json`, is moved into `library.json` the first time the new version starts.
 
@@ -274,6 +285,19 @@ go run .
 ```
 
 On Linux the native file picker needs `zenity` or `kdialog`. If neither is installed, the app uses Fyne's own file browser.
+
+The media server connection has tests against a real SMB server, which only run when asked for. With Docker, start a throwaway Samba server and run them with the `smbserver` tag:
+
+```sh
+docker run -d --name abp-smb-test -p 127.0.0.1:1445:445 dperson/samba -u "tester;secret" -s "audiobooks;/share;yes;no;no;tester"
+docker exec abp-smb-test sh -c 'mkdir -p "/share/Books/Tolkien/The Hobbit" /share/Books/Herbert'
+docker cp "audio/testdata/speech-16bit-mono.wav" "abp-smb-test:/share/Books/Tolkien/The Hobbit/Part 1.wav"
+docker cp "audio/testdata/speech-24bit-stereo.flac" "abp-smb-test:/share/Books/Tolkien/The Hobbit/Part 2.flac"
+docker cp "audio/testdata/speech-aac-mono.m4b" "abp-smb-test:/share/Books/Herbert/Dune.m4b"
+docker exec abp-smb-test chown -R smbuser:smb /share
+go test -tags smbserver ./mediaserver/ ./ui/
+docker rm -f abp-smb-test
+```
 
 ## Building an app to share
 

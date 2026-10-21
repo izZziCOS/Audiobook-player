@@ -23,6 +23,7 @@ type BookEdit struct {
     ASIN      string `json:"asin,omitempty"`
     Store     string `json:"store,omitempty"`
     NoAudible bool   `json:"noAudible,omitempty"`
+    Speed     string `json:"speed,omitempty"`
 }
 
 func (d *Data) Edit(book string) BookEdit {

@@ -2,10 +2,10 @@ package library
 
 import (
     "fmt"
-    "os"
     "path/filepath"
 
     "github.com/izzzicos/audiobook-player/audio"
+    "github.com/izzzicos/audiobook-player/vfs"
 )
 
 type Book struct {
@@ -36,7 +36,7 @@ func OpenFolder(folder string) (*Book, error) {
 }
 
 func OpenBook(path string) (*Book, error) {
-    info, err := os.Stat(path)
+    info, err := vfs.Stat(path)
     if err != nil {
         return nil, err
     }

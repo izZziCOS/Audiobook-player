@@ -21,11 +21,13 @@ import (
     "github.com/izzzicos/audiobook-player/ui/kit"
     "github.com/izzzicos/audiobook-player/ui/nowplaying"
     "github.com/izzzicos/audiobook-player/ui/offline"
+    "github.com/izzzicos/audiobook-player/ui/remote"
     "github.com/izzzicos/audiobook-player/ui/settings"
     "github.com/izzzicos/audiobook-player/ui/shelf"
     "github.com/izzzicos/audiobook-player/ui/statistics"
     "github.com/izzzicos/audiobook-player/ui/syncing"
     "github.com/izzzicos/audiobook-player/ui/userdata"
+    "github.com/izzzicos/audiobook-player/vfs"
 )
 
 const AppID = "com.izzzicos.audiobookplayer"
@@ -34,8 +36,9 @@ type UI struct {
     App    fyne.App
     Window fyne.Window
 
-    data  *userdata.Data
-    async func(func())
+    data    *userdata.Data
+    async   func(func())
+    secrets remote.Secrets
 
     picker     *kit.Picker
     editor     *details.Editor
@@ -45,6 +48,7 @@ type UI struct {
     importer   *autoimport.Importer
     syncer     *syncing.Syncer
     offline    *offline.Store
+    remote     *remote.Connection
     statistics *statistics.View
     settings   *settings.Settings
 
@@ -69,10 +73,11 @@ func NewUI(icon fyne.Resource) *UI {
     return &UI{
         App:    a,
         Window: w,
-        data:   userdata.New(userdata.FileIn(a.Storage().RootURI().Path())),
+        data:   userdata.New(userdata.FileIn(userdata.Folder(a.Storage().RootURI().Path()))),
         async: func(work func()) {
             go work()
         },
+        secrets: remote.Keychain{},
     }
 }
 
@@ -130,7 +135,11 @@ func (ui *UI) build() {
     ui.statistics = statistics.New(ui.data, ui.shelf.Title)
     ui.syncer = syncing.New(ui.Window, prefs, ui.data, ui.picker, ui.async, ui.player)
     ui.offline = offline.New(ui.Window, prefs, ui.data, ui.async)
-    ui.settings = settings.New(ui.App, ui.Window, ui.importer.Section(), ui.offline.Section(), ui.syncer.Section(), ui.about.Section())
+    if ui.secrets == nil {
+        ui.secrets = remote.Memory{}
+    }
+    ui.remote = remote.New(ui.Window, prefs, ui.picker, ui.secrets, filepath.Dir(ui.data.File()))
+    ui.settings = settings.New(ui.App, ui.Window, ui.player.Section(), ui.remote.Section(), ui.importer.Section(), ui.offline.Section(), ui.syncer.Section(), ui.about.Section())
 
     ui.player.OnBookOpened = func(key string) {
         ui.shelf.Add([]string{key})
@@ -139,6 +148,9 @@ func (ui *UI) build() {
     ui.player.Offline = ui.offline
     ui.shelf.Offline = ui.offline
     ui.offline.OnChanged = ui.shelf.DownloadChanged
+    ui.remote.UseAsLibrary = ui.importer.SetFolder
+    ui.remote.SyncThrough = ui.syncer.SetFolder
+    ui.remote.OnConnected = ui.serverConnected
     ui.shelf.OnRestart = func(path string) {
         ui.player.Restart(path)
         ui.syncer.Write()
@@ -146,7 +158,8 @@ func (ui *UI) build() {
     ui.offline.Title = ui.shelf.Title
     ui.shelf.Open = ui.playFromShelf
     ui.shelf.Show = ui.showLibrary
-    ui.shelf.Speed = ui.player.Speed
+    ui.shelf.SpeedOf = ui.player.SpeedFor
+    ui.player.OnSpeedChanged = ui.shelf.Reload
     ui.shelf.SyncProgress = ui.player.SavePosition
     ui.shelf.StartFolder = ui.player.LibraryFolder
     ui.importer.StartFolder = ui.player.LibraryFolder
@@ -176,7 +189,10 @@ func (ui *UI) setup() {
 
     ui.Window.SetPadded(false)
     ui.Window.SetContent(ui.content)
-    ui.App.Lifecycle().SetOnStopped(ui.save)
+    ui.App.Lifecycle().SetOnStopped(func() {
+        ui.save()
+        ui.remote.Close()
+    })
     ui.App.Lifecycle().SetOnEnteredForeground(func() {
         ui.syncer.Pull(nil)
     })
@@ -203,6 +219,7 @@ func (ui *UI) load() {
     if notice := ui.data.Load(ui.App.Preferences()); notice != "" {
         dialog.ShowInformation("Library restored", notice, ui.Window)
     }
+    ui.remote.Load()
     ui.shelf.Load()
     ui.offline.Load()
     ui.tidy()
@@ -210,6 +227,17 @@ func (ui *UI) load() {
     ui.syncer.Load()
 
     ui.resumeLastBook()
+}
+
+func (ui *UI) serverConnected() {
+    ui.shelf.RecheckMissing()
+    ui.importer.Scan()
+    ui.syncer.Pull(nil)
+
+    last := cmp.Or(ui.data.LastBook.Folder, ui.data.LastBook.File)
+    if last != "" && vfs.IsRemote(last) && ui.player.Book() == nil && !ui.player.Opening() {
+        ui.resumeLastBook()
+    }
 }
 
 func (ui *UI) resumeLastBook() {

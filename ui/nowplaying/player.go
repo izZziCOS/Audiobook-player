@@ -34,7 +34,8 @@ type Player struct {
     EditDetails  func(key string, original details.Original)
     FolderBookOf func(file string) string
     ShowAbout    func(key string, book about.Book)
-    OnPaused     func()
+    OnPaused       func()
+    OnSpeedChanged func(key string)
     Offline      *offline.Store
 
     window fyne.Window
@@ -80,6 +81,9 @@ type Player struct {
     seeking        atomic.Bool
     waiting        bool
 
+    pausedAt           time.Time
+    clock              func() time.Time
+
     generation         int
     opening            bool
     playAfterOpen      bool
@@ -97,6 +101,7 @@ func New(window fyne.Window, prefs fyne.Preferences, data *userdata.Data, picker
         async:  async,
         speed:  1.0,
         sleep:  sleepState{lastPosition: noSleepPosition},
+        clock:  time.Now,
     }
     p.build()
 
@@ -238,7 +243,6 @@ func (p *Player) LoadSettings() {
 
 func (p *Player) SaveSettings() {
     p.prefs.SetFloat(preferenceVolume, p.volume.Value)
-    p.prefs.SetString(preferenceSpeed, p.speedChoice)
 
     if p.book != nil && p.audio != nil {
         p.prefs.SetBool(preferenceWasPlaying, p.playing)

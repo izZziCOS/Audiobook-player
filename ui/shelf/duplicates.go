@@ -15,6 +15,7 @@ import (
 
     "github.com/izzzicos/audiobook-player/library"
     "github.com/izzzicos/audiobook-player/ui/kit"
+    "github.com/izzzicos/audiobook-player/vfs"
 )
 
 type Copy struct {
@@ -58,7 +59,7 @@ func (s *Shelf) knownBooks() []knownBook {
 }
 
 func (book *knownBook) inspect() {
-    info, err := os.Stat(book.path)
+    info, err := vfs.Stat(book.path)
     if err != nil {
         return
     }
@@ -101,7 +102,7 @@ func planImport(books []knownBook, paths []string, keepCopies bool) importPlan {
             continue
         }
 
-        info, err := os.Stat(path)
+        info, err := vfs.Stat(path)
         if err != nil {
             plan.added = append(plan.added, path)
             plan.paths[path] = path
@@ -172,7 +173,7 @@ func coveringBook(books []knownBook, path string, info os.FileInfo) string {
     }
 
     folder := library.Normalize(filepath.Dir(path))
-    folderInfo, err := os.Stat(folder)
+    folderInfo, err := vfs.Stat(folder)
     if err != nil {
         return ""
     }
@@ -302,7 +303,7 @@ func (s *Shelf) FolderBookOf(file string) string {
         return ""
     }
 
-    if info, err := os.Stat(folder); err != nil || !info.IsDir() {
+    if info, err := vfs.Stat(folder); err != nil || !info.IsDir() {
         return ""
     }
 
@@ -416,7 +417,7 @@ func (s *Shelf) showDuplicates() {
 }
 
 func (s *Shelf) duplicateRow(entry *shelfEntry, removed func()) fyne.CanvasObject {
-    location := widget.NewLabel(entry.path)
+    location := widget.NewLabel(vfs.Display(entry.path))
     location.Wrapping = fyne.TextWrapBreak
     location.SizeName = theme.SizeNameCaptionText
 

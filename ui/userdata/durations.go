@@ -1,9 +1,9 @@
 package userdata
 
 import (
-    "os"
 
     "github.com/izzzicos/audiobook-player/audio"
+    "github.com/izzzicos/audiobook-player/vfs"
 )
 
 type PartDuration struct {
@@ -30,7 +30,7 @@ func LookupDurationOf(cache map[string]PartDuration, part, file string) (float64
         return 0, false
     }
 
-    info, err := os.Stat(file)
+    info, err := vfs.Stat(file)
     if err != nil || info.Size() != cached.Size || info.ModTime().UnixNano() != cached.Modified {
         return 0, false
     }
@@ -39,7 +39,7 @@ func LookupDurationOf(cache map[string]PartDuration, part, file string) (float64
 }
 
 func MeasureDuration(path string) (PartDuration, error) {
-    info, err := os.Stat(path)
+    info, err := vfs.Stat(path)
     if err != nil {
         return PartDuration{}, err
     }
@@ -61,7 +61,7 @@ func (d *Data) CacheDuration(path string, seconds float64) {
 }
 
 func (d *Data) CacheDurationOf(part, file string, seconds float64) {
-    info, err := os.Stat(file)
+    info, err := vfs.Stat(file)
     if err != nil {
         return
     }

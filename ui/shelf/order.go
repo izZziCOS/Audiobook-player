@@ -21,9 +21,11 @@ const (
     sortAuthor   = "Author"
     sortProgress = "Progress"
     sortRating   = "Rating"
+    sortLength   = "Length"
+    sortTimeLeft = "Time left"
 )
 
-var sortOptions = []string{sortRecent, sortTitle, sortAuthor, sortProgress, sortRating}
+var sortOptions = []string{sortRecent, sortTitle, sortAuthor, sortProgress, sortLength, sortTimeLeft, sortRating}
 
 const (
     showAll        = "All"
@@ -99,6 +101,17 @@ func compareAuthors(a, b string) int {
     return compareNames(a, b)
 }
 
+func compareKnown(a, b bool) int {
+    switch {
+    case a == b:
+        return 0
+    case a:
+        return -1
+    default:
+        return 1
+    }
+}
+
 func byTitle(a, b *shelfEntry) int {
     return compareNames(a.title, b.title)
 }
@@ -124,6 +137,36 @@ func (s *Shelf) sortShelf() {
             return cmp.Or(
                 cmp.Compare(states[a], states[b]),
                 cmp.Compare(fractions[b], fractions[a]),
+                byTitle(a, b),
+            )
+        }
+    case sortLength:
+        lengths := map[*shelfEntry]float64{}
+        known := map[*shelfEntry]bool{}
+        for _, entry := range s.entries {
+            total, _, found := s.listened(entry)
+            lengths[entry], known[entry] = total, found
+        }
+        order = func(a, b *shelfEntry) int {
+            return cmp.Or(
+                compareKnown(known[a], known[b]),
+                cmp.Compare(lengths[a], lengths[b]),
+                byTitle(a, b),
+            )
+        }
+    case sortTimeLeft:
+        left := map[*shelfEntry]float64{}
+        known := map[*shelfEntry]bool{}
+        finished := map[*shelfEntry]bool{}
+        for _, entry := range s.entries {
+            left[entry], known[entry] = s.timeLeft(entry)
+            finished[entry] = s.readingState(entry) == stateFinished
+        }
+        order = func(a, b *shelfEntry) int {
+            return cmp.Or(
+                compareKnown(!finished[a], !finished[b]),
+                compareKnown(known[a], known[b]),
+                cmp.Compare(left[a], left[b]),
                 byTitle(a, b),
             )
         }

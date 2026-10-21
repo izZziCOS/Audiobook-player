@@ -21,6 +21,7 @@ import (
     "github.com/izzzicos/audiobook-player/store"
     "github.com/izzzicos/audiobook-player/ui/details"
     "github.com/izzzicos/audiobook-player/ui/userdata"
+    "github.com/izzzicos/audiobook-player/vfs"
 )
 
 const (
@@ -35,7 +36,7 @@ type fileStamp struct {
 }
 
 func stampOf(path string) (fileStamp, bool) {
-    info, err := os.Stat(path)
+    info, err := vfs.Stat(path)
     if err != nil {
         return fileStamp{}, false
     }

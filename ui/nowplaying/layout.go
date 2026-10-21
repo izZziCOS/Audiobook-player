@@ -217,6 +217,32 @@ func (p *Player) applyBackdrop() {
     p.backdrop.Refresh()
 }
 
+func (p *Player) chooseSpeed(value string) {
+    p.selectSpeed(value)
+    p.prefs.SetString(preferenceSpeed, p.speedChoice)
+
+    if p.book != nil {
+        edit := p.data.Edit(p.book.Key())
+        edit.Speed = p.speedChoice
+        p.data.SetEdit(p.book.Key(), edit)
+        if p.OnSpeedChanged != nil {
+            p.OnSpeedChanged(p.book.Key())
+        }
+    }
+}
+
+func (p *Player) bookSpeed(key string) string {
+    if speed := p.data.Edit(key).Speed; slices.Contains(speedOptions, speed) {
+        return speed
+    }
+
+    return p.prefs.StringWithFallback(preferenceSpeed, "1.0x")
+}
+
+func (p *Player) SpeedFor(key string) float64 {
+    return speedValue(p.bookSpeed(key))
+}
+
 func (p *Player) selectSpeed(value string) {
     if !slices.Contains(speedOptions, value) {
         value = "1.0x"
@@ -231,7 +257,7 @@ func (p *Player) showSpeedMenu() {
     items := make([]*fyne.MenuItem, len(speedOptions))
     for i, option := range speedOptions {
         items[i] = fyne.NewMenuItem(strings.TrimSuffix(option, "x")+"×", func() {
-            p.selectSpeed(option)
+            p.chooseSpeed(option)
         })
         items[i].Checked = option == p.speedChoice
     }

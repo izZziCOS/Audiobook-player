@@ -9,13 +9,13 @@ import (
     _ "image/gif"
     "image/jpeg"
     _ "image/png"
-    "os"
     "path/filepath"
     "strings"
 
     _ "golang.org/x/image/bmp"
     "golang.org/x/image/draw"
     _ "golang.org/x/image/webp"
+    "github.com/izzzicos/audiobook-player/vfs"
 )
 
 const (
@@ -37,7 +37,7 @@ func FindCover(audioPath string, embedded []byte) (*Cover, error) {
         filepath.Ext(audioPath),
     )
 
-    entries, err := os.ReadDir(directory)
+    entries, err := vfs.ReadDir(directory)
     if err != nil {
         return nil, fmt.Errorf("reading audio directory: %w", err)
     }
@@ -177,7 +177,7 @@ func AverageColor(data []byte) (color.NRGBA, bool) {
 }
 
 func readCover(path string) *Cover {
-    data, err := os.ReadFile(path)
+    data, err := vfs.ReadFile(path)
     if err != nil || !isDecodableImage(data) {
         return nil
     }

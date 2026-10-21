@@ -2,17 +2,17 @@ package library
 
 import (
     "fmt"
-    "os"
     "path/filepath"
     "sort"
     "strings"
     "time"
 
     "github.com/izzzicos/audiobook-player/audio"
+    "github.com/izzzicos/audiobook-player/vfs"
 )
 
 func ListAudioFiles(directory string) ([]string, error) {
-    entries, err := os.ReadDir(directory)
+    entries, err := vfs.ReadDir(directory)
     if err != nil {
         return nil, fmt.Errorf("reading folder: %w", err)
     }
@@ -87,7 +87,7 @@ const maxScanDepth = 6
 func FindBooks(root string) ([]string, error) {
     root = normalize(root)
 
-    info, err := os.Stat(root)
+    info, err := vfs.Stat(root)
     if err != nil {
         return nil, err
     }
@@ -126,7 +126,7 @@ func findBooks(directory string, depth int, books *[]string) error {
         return nil
     }
 
-    entries, err := os.ReadDir(directory)
+    entries, err := vfs.ReadDir(directory)
     if err != nil {
         return err
     }
@@ -151,7 +151,7 @@ func WholeBooksOnly(files []string) bool {
 }
 
 func Inspect(path string) (int, time.Time, error) {
-    info, err := os.Stat(path)
+    info, err := vfs.Stat(path)
     if err != nil {
         return 0, time.Time{}, err
     }
@@ -167,7 +167,7 @@ func Inspect(path string) (int, time.Time, error) {
 
     var modified time.Time
     for _, file := range files {
-        if fileInfo, err := os.Stat(file); err == nil && fileInfo.ModTime().After(modified) {
+        if fileInfo, err := vfs.Stat(file); err == nil && fileInfo.ModTime().After(modified) {
             modified = fileInfo.ModTime()
         }
     }

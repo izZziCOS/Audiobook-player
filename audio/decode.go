@@ -6,7 +6,6 @@ import (
     "fmt"
     "io"
     "math"
-    "os"
     "path/filepath"
     "strings"
 
@@ -17,6 +16,7 @@ import (
     mewkizflac "github.com/mewkiz/flac"
     aacpcm "github.com/tphakala/go-aac/pcm"
     "github.com/tphakala/go-m4a/aacm4a"
+    "github.com/izzzicos/audiobook-player/vfs"
 )
 
 var SupportedExtensions = []string{".mp3", ".m4b", ".m4a", ".wav", ".flac", ".ogg", ".oga"}
@@ -33,7 +33,7 @@ func IsSupported(name string) bool {
     return false
 }
 
-func Decode(file *os.File) (beep.StreamSeekCloser, beep.Format, error) {
+func Decode(file vfs.File) (beep.StreamSeekCloser, beep.Format, error) {
     switch extension := strings.ToLower(filepath.Ext(file.Name())); extension {
     case ".mp3":
         return mp3.Decode(file)
@@ -51,7 +51,7 @@ func Decode(file *os.File) (beep.StreamSeekCloser, beep.Format, error) {
 }
 
 func Duration(path string) (float64, error) {
-    file, err := os.Open(path)
+    file, err := vfs.Open(path)
     if err != nil {
         return 0, err
     }
@@ -81,7 +81,7 @@ func (s scaledStreamer) Stream(samples [][2]float64) (int, bool) {
     return n, ok
 }
 
-func decodeWAV(file *os.File) (beep.StreamSeekCloser, beep.Format, error) {
+func decodeWAV(file vfs.File) (beep.StreamSeekCloser, beep.Format, error) {
     streamer, format, err := wav.Decode(file)
     if err != nil && strings.Contains(err.Error(), "unsupported") {
         return nil, beep.Format{}, fmt.Errorf(
@@ -115,7 +115,7 @@ type flacDecoder struct {
     err      error
 }
 
-func decodeFLAC(file *os.File) (beep.StreamSeekCloser, beep.Format, error) {
+func decodeFLAC(file vfs.File) (beep.StreamSeekCloser, beep.Format, error) {
     stream, err := mewkizflac.NewSeek(file)
     if err != nil {
         return nil, beep.Format{}, fmt.Errorf("flac: %w", err)
@@ -230,7 +230,7 @@ type vorbisDecoder struct {
     err      error
 }
 
-func decodeVorbis(file *os.File) (beep.StreamSeekCloser, beep.Format, error) {
+func decodeVorbis(file vfs.File) (beep.StreamSeekCloser, beep.Format, error) {
     reader, err := oggvorbis.NewReader(file)
     if err != nil {
         return nil, beep.Format{}, fmt.Errorf("ogg/vorbis: %w", err)
@@ -327,7 +327,7 @@ type m4aDecoder struct {
     err      error
 }
 
-func decodeM4A(file *os.File) (beep.StreamSeekCloser, beep.Format, error) {
+func decodeM4A(file vfs.File) (beep.StreamSeekCloser, beep.Format, error) {
     decoder, info, err := aacm4a.NewSeekableDecoder(file)
     if err != nil {
         return nil, beep.Format{}, m4aError(err)

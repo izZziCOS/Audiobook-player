@@ -3,7 +3,6 @@ package autoimport
 import (
     "errors"
     "fmt"
-    "os"
     "sync/atomic"
     "time"
 
@@ -19,6 +18,7 @@ import (
     "github.com/izzzicos/audiobook-player/ui/kit"
     "github.com/izzzicos/audiobook-player/ui/shelf"
     "github.com/izzzicos/audiobook-player/ui/userdata"
+    "github.com/izzzicos/audiobook-player/vfs"
 )
 
 const preferenceWatchedFolder = "libraryFolder"
@@ -112,7 +112,7 @@ func (im *Importer) Folder() string {
 var reachable = library.Reachable
 
 func exists(path string) bool {
-    _, err := os.Stat(path)
+    _, err := vfs.Stat(path)
     return err == nil
 }
 
@@ -335,7 +335,7 @@ func (im *Importer) updateFolder() {
         im.folderActions.Hide()
         im.status.SetText("Books are only added when you add or open them.")
     } else {
-        im.folderLabel.SetText(im.folder)
+        im.folderLabel.SetText(vfs.Display(im.folder))
         im.folderLabel.Importance = widget.MediumImportance
         im.folderActions.Show()
     }

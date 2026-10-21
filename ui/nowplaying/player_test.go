@@ -3,6 +3,7 @@ package nowplaying
 import (
     "math"
     "testing"
+    "time"
 
     "fyne.io/fyne/v2/test"
 
@@ -104,5 +105,101 @@ func TestRestartingTheOpenBook(t *testing.T) {
 
     if p.book.Index != 0 || p.positionSeconds() != 0 || p.data.Positions[folder].Part != parts[0] {
         t.Fatalf("the open book should go back to the start, got part %d at %v", p.book.Index+1, p.positionSeconds())
+    }
+}
+
+func TestEachBookKeepsItsOwnSpeed(t *testing.T) {
+    p := newTestPlayer(t)
+    first, _ := testbooks.Book(t)
+    second, _ := testbooks.Book(t)
+
+    p.OpenFolder(first)
+    p.chooseSpeed("2.0x")
+    p.OpenFolder(second)
+    if p.speedChoice != "2.0x" {
+        t.Fatalf("a book without its own speed should use the last speed chosen, got %s", p.speedChoice)
+    }
+    p.chooseSpeed("1.25x")
+
+    p.OpenFolder(first)
+    if p.speedChoice != "2.0x" || p.speed != 2.0 {
+        t.Fatalf("the first book should play at its own speed, got %s", p.speedChoice)
+    }
+    p.OpenFolder(second)
+    if p.speedChoice != "1.25x" || p.SpeedFor(first) != 2.0 {
+        t.Fatalf("got %s and %v", p.speedChoice, p.SpeedFor(first))
+    }
+}
+
+func TestRewindTable(t *testing.T) {
+    for paused, want := range map[time.Duration]float64{
+        5 * time.Second:  0,
+        30 * time.Second: 2,
+        3 * time.Minute:  5,
+        20 * time.Minute: 10,
+        6 * time.Hour:    20,
+        72 * time.Hour:   30,
+    } {
+        if got := rewindFor(paused); got != want {
+            t.Errorf("after %v got %v seconds, want %v", paused, got, want)
+        }
+    }
+}
+
+func TestGoingBackAfterAPause(t *testing.T) {
+    p := newTestPlayer(t)
+    _, parts := testbooks.Book(t)
+    now := time.Now()
+    p.clock = func() time.Time { return now }
+
+    p.OpenFile(parts[0])
+    middle := p.durationSeconds() / 2
+    resumeAfter := func(pause time.Duration) float64 {
+        p.audio.SeekTo(middle)
+        p.TogglePlay()
+        p.TogglePlay()
+        now = now.Add(pause)
+        p.TogglePlay()
+        position := p.positionSeconds()
+        p.TogglePlay()
+        return position
+    }
+
+    if position := resumeAfter(5 * time.Second); !closeTo(position, middle) {
+        t.Fatalf("a short pause shouldn't go back, at %v", position)
+    }
+    if position := resumeAfter(2 * time.Minute); position != 0 {
+        t.Fatalf("after two minutes it should go back 5 seconds, to the start here, at %v", position)
+    }
+
+    p.audio.SeekTo(middle)
+    p.TogglePlay()
+    p.TogglePlay()
+    now = now.Add(time.Hour)
+    p.seekInPart(middle / 2)
+    p.TogglePlay()
+    if !closeTo(p.positionSeconds(), middle/2) {
+        t.Fatal("after moving yourself, it shouldn't go back")
+    }
+    p.TogglePlay()
+
+    p.prefs.SetBool(preferenceRewind, false)
+    if position := resumeAfter(time.Hour); !closeTo(position, middle) {
+        t.Fatal("with the setting off it shouldn't go back")
+    }
+}
+
+func TestReopeningABookLaterGoesBack(t *testing.T) {
+    p := newTestPlayer(t)
+    folder, parts := testbooks.Book(t)
+    p.data.Positions[folder] = userdata.Position{Part: parts[0], Position: 0.3, Listened: time.Now().Add(-48 * time.Hour).Unix()}
+
+    p.OpenFolder(folder)
+    if !closeTo(p.positionSeconds(), 0.3) {
+        t.Fatalf("setup: the book should open where it was left, at %v", p.positionSeconds())
+    }
+    p.TogglePlay()
+    if p.positionSeconds() != 0 {
+        t.Fatalf("two days later it should go back 30 seconds, to the start here, at %v", p.positionSeconds())
     }
 }
