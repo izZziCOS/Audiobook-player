@@ -6,6 +6,7 @@ require (
 	fyne.io/fyne/v2 v2.8.2
 	github.com/dhowden/tag v0.0.0-20240417053706-3d75831295e8
 	github.com/faiface/beep v1.1.0
+	github.com/hajimehoshi/go-mp3 v0.3.0
 	github.com/hirochachacha/go-smb2 v1.1.0
 	github.com/jfreymuth/oggvorbis v1.0.1
 	github.com/mewkiz/flac v1.0.7
@@ -43,7 +44,6 @@ require (
 	github.com/google/btree v1.1.2 // indirect
 	github.com/hack-pad/go-indexeddb v0.3.2 // indirect
 	github.com/hack-pad/safejs v0.1.0 // indirect
-	github.com/hajimehoshi/go-mp3 v0.3.0 // indirect
 	github.com/hajimehoshi/oto v0.7.1 // indirect
 	github.com/icza/bitio v1.0.0 // indirect
 	github.com/jeandeaual/go-locale v0.0.0-20250612000132-0ef82f21eade // indirect

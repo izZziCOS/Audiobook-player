@@ -1,32 +1,31 @@
 package shelf
 
 import (
-
-    "github.com/izzzicos/audiobook-player/library"
-    "github.com/izzzicos/audiobook-player/vfs"
+	"github.com/izzzicos/audiobook-player/library"
+	"github.com/izzzicos/audiobook-player/vfs"
 )
 
 var reachable = library.Reachable
 
 func exists(path string) bool {
-    _, err := vfs.Stat(path)
-    return err == nil
+	_, err := vfs.Stat(path)
+	return err == nil
 }
 
 func locateMoved(path string, known *library.Fingerprint) string {
-    if known == nil {
-        return ""
-    }
+	if known == nil {
+		return ""
+	}
 
-    for _, candidate := range library.OtherDrives(path) {
-        if !exists(candidate) {
-            continue
-        }
+	for _, candidate := range library.OtherDrives(path) {
+		if !exists(candidate) {
+			continue
+		}
 
-        if fingerprint, err := library.FingerprintOf(candidate); err == nil && known.Matches(fingerprint) {
-            return candidate
-        }
-    }
+		if fingerprint, err := library.FingerprintOf(candidate); err == nil && known.Matches(fingerprint) {
+			return candidate
+		}
+	}
 
-    return ""
+	return ""
 }

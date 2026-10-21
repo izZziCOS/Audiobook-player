@@ -1,197 +1,197 @@
 package library
 
 import (
-    "fmt"
-    "path/filepath"
+	"fmt"
+	"path/filepath"
 
-    "github.com/izzzicos/audiobook-player/audio"
-    "github.com/izzzicos/audiobook-player/vfs"
+	"github.com/izzzicos/audiobook-player/audio"
+	"github.com/izzzicos/audiobook-player/vfs"
 )
 
 type Book struct {
-    Folder    string
-    Parts     []string
-    Local     []string
-    Index     int
-    Durations []float64
+	Folder    string
+	Parts     []string
+	Local     []string
+	Index     int
+	Durations []float64
 }
 
 func SingleFile(path string) *Book {
-    return &Book{Parts: []string{normalize(path)}}
+	return &Book{Parts: []string{normalize(path)}}
 }
 
 func OpenFolder(folder string) (*Book, error) {
-    folder = normalize(folder)
+	folder = normalize(folder)
 
-    parts, err := ListAudioFiles(folder)
-    if err != nil {
-        return nil, err
-    }
+	parts, err := ListAudioFiles(folder)
+	if err != nil {
+		return nil, err
+	}
 
-    if len(parts) == 0 {
-        return nil, fmt.Errorf("no audio files found in %q", filepath.Base(folder))
-    }
+	if len(parts) == 0 {
+		return nil, fmt.Errorf("no audio files found in %q", filepath.Base(folder))
+	}
 
-    return &Book{Folder: folder, Parts: parts}, nil
+	return &Book{Folder: folder, Parts: parts}, nil
 }
 
 func OpenBook(path string) (*Book, error) {
-    info, err := vfs.Stat(path)
-    if err != nil {
-        return nil, err
-    }
+	info, err := vfs.Stat(path)
+	if err != nil {
+		return nil, err
+	}
 
-    if info.IsDir() {
-        return OpenFolder(path)
-    }
+	if info.IsDir() {
+		return OpenFolder(path)
+	}
 
-    if !audio.IsSupported(path) {
-        return nil, fmt.Errorf("%q is not a supported audio file", filepath.Base(path))
-    }
+	if !audio.IsSupported(path) {
+		return nil, fmt.Errorf("%q is not a supported audio file", filepath.Base(path))
+	}
 
-    return SingleFile(path), nil
+	return SingleFile(path), nil
 }
 
 func (b *Book) Key() string {
-    if b.Folder != "" {
-        return b.Folder
-    }
+	if b.Folder != "" {
+		return b.Folder
+	}
 
-    return b.Parts[0]
+	return b.Parts[0]
 }
 
 func (b *Book) Current() string {
-    return b.Parts[b.Index]
+	return b.Parts[b.Index]
 }
 
 func (b *Book) Playable() string {
-    return b.PlayablePart(b.Index)
+	return b.PlayablePart(b.Index)
 }
 
 func (b *Book) PlayablePart(index int) string {
-    if index >= 0 && index < len(b.Local) && b.Local[index] != "" {
-        return b.Local[index]
-    }
+	if index >= 0 && index < len(b.Local) && b.Local[index] != "" {
+		return b.Local[index]
+	}
 
-    return b.Parts[index]
+	return b.Parts[index]
 }
 
 func (b *Book) IsMultiPart() bool {
-    return len(b.Parts) > 1
+	return len(b.Parts) > 1
 }
 
 func (b *Book) HasPart(index int) bool {
-    return index >= 0 && index < len(b.Parts)
+	return index >= 0 && index < len(b.Parts)
 }
 
 func (b *Book) Find(path string) (int, bool) {
-    path = normalize(path)
+	path = normalize(path)
 
-    for index, part := range b.Parts {
-        if part == path {
-            return index, true
-        }
-    }
+	for index, part := range b.Parts {
+		if part == path {
+			return index, true
+		}
+	}
 
-    return 0, false
+	return 0, false
 }
 
 func (b *Book) HasDurations() bool {
-    return len(b.Durations) == len(b.Parts)
+	return len(b.Durations) == len(b.Parts)
 }
 
 func (b *Book) TotalDuration() float64 {
-    total := 0.0
-    for _, duration := range b.Durations {
-        total += duration
-    }
+	total := 0.0
+	for _, duration := range b.Durations {
+		total += duration
+	}
 
-    return total
+	return total
 }
 
 func (b *Book) Offset() float64 {
-    return b.OffsetOf(b.Index)
+	return b.OffsetOf(b.Index)
 }
 
 func (b *Book) OffsetOf(index int) float64 {
-    if !b.HasDurations() || !b.HasPart(index) {
-        return 0
-    }
+	if !b.HasDurations() || !b.HasPart(index) {
+		return 0
+	}
 
-    offset := 0.0
-    for _, duration := range b.Durations[:index] {
-        offset += duration
-    }
+	offset := 0.0
+	for _, duration := range b.Durations[:index] {
+		offset += duration
+	}
 
-    return offset
+	return offset
 }
 
 func (b *Book) Locate(seconds float64) (int, float64) {
-    for index, duration := range b.Durations {
-        if seconds < duration || index == len(b.Durations)-1 {
-            return index, max(seconds, 0)
-        }
+	for index, duration := range b.Durations {
+		if seconds < duration || index == len(b.Durations)-1 {
+			return index, max(seconds, 0)
+		}
 
-        seconds -= duration
-    }
+		seconds -= duration
+	}
 
-    return 0, 0
+	return 0, 0
 }
 
 func (b *Book) Title(tags Metadata) string {
-    if tags.Album != "" {
-        return tags.Album
-    }
+	if tags.Album != "" {
+		return tags.Album
+	}
 
-    if b.IsMultiPart() {
-        return CleanName(filepath.Base(b.Folder))
-    }
+	if b.IsMultiPart() {
+		return CleanName(filepath.Base(b.Folder))
+	}
 
-    if tags.Title != "" {
-        return tags.Title
-    }
+	if tags.Title != "" {
+		return tags.Title
+	}
 
-    return DisplayTitle(b.Current())
+	return DisplayTitle(b.Current())
 }
 
 func (b *Book) Subtitle(tags Metadata) string {
-    if b.IsMultiPart() {
-        partName := tags.Title
-        if partName == "" {
-            partName = DisplayTitle(b.Current())
-        }
+	if b.IsMultiPart() {
+		partName := tags.Title
+		if partName == "" {
+			partName = DisplayTitle(b.Current())
+		}
 
-        return fmt.Sprintf(
-            "Part %d of %d · %s",
-            b.Index+1,
-            len(b.Parts),
-            partName,
-        )
-    }
+		return fmt.Sprintf(
+			"Part %d of %d · %s",
+			b.Index+1,
+			len(b.Parts),
+			partName,
+		)
+	}
 
-    if tags.Artist != "" {
-        return tags.Artist
-    }
+	if tags.Artist != "" {
+		return tags.Artist
+	}
 
-    return CleanName(FolderName(b.Current()))
+	return CleanName(FolderName(b.Current()))
 }
 
 func (b *Book) BrowseFolder() string {
-    if b.Folder != "" {
-        return b.Folder
-    }
+	if b.Folder != "" {
+		return b.Folder
+	}
 
-    return filepath.Dir(b.Current())
+	return filepath.Dir(b.Current())
 }
 
 func (b *Book) LibraryFolder() string {
-    if b.Folder != "" {
-        return filepath.Dir(b.Folder)
-    }
+	if b.Folder != "" {
+		return filepath.Dir(b.Folder)
+	}
 
-    return b.BrowseFolder()
+	return b.BrowseFolder()
 }
 
 func normalize(path string) string {
-    return Normalize(path)
+	return Normalize(path)
 }

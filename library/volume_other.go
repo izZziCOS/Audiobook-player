@@ -5,13 +5,13 @@ package library
 import "os"
 
 func isMountPoint(string, os.FileInfo) bool {
-    return true
+	return true
 }
 
 func isNetworkVolume(string) bool {
-    return false
+	return false
 }
 
 func FreeSpace(string) (int64, bool) {
-    return 0, false
+	return 0, false
 }

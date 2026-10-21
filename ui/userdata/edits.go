@@ -1,181 +1,235 @@
 package userdata
 
 import (
-    "crypto/sha256"
-    "encoding/hex"
-    "errors"
-    "fmt"
-    "os"
-    "path/filepath"
-    "strings"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
 
-    "fyne.io/fyne/v2"
+	"fyne.io/fyne/v2"
 
-    "github.com/izzzicos/audiobook-player/library"
+	"github.com/izzzicos/audiobook-player/library"
 )
 
 const coversFolder = "covers"
 
 type BookEdit struct {
-    Title  string `json:"title,omitempty"`
-    Author string `json:"author,omitempty"`
-    Cover  string `json:"cover,omitempty"`
-    ASIN      string `json:"asin,omitempty"`
-    Store     string `json:"store,omitempty"`
-    NoAudible bool   `json:"noAudible,omitempty"`
-    Speed     string `json:"speed,omitempty"`
+	Title     string `json:"title,omitempty"`
+	Author    string `json:"author,omitempty"`
+	Cover     string `json:"cover,omitempty"`
+	ASIN      string `json:"asin,omitempty"`
+	Store     string `json:"store,omitempty"`
+	NoAudible bool   `json:"noAudible,omitempty"`
+	Speed     string `json:"speed,omitempty"`
 }
 
 func (d *Data) Edit(book string) BookEdit {
-    return d.edits[book]
+	return d.edits[book]
 }
 
 func (d *Data) SetEdit(book string, edit BookEdit) {
-    edit.Title = library.CleanText(edit.Title)
-    edit.Author = library.CleanText(edit.Author)
+	edit.Title = library.CleanText(edit.Title)
+	edit.Author = library.CleanText(edit.Author)
 
-    previous := d.edits[book]
-    if edit == (BookEdit{}) {
-        delete(d.edits, book)
-    } else {
-        d.edits[book] = edit
-    }
+	d.storeEdit(book, edit, time.Now().UnixNano())
+	d.revision++
+	d.Save()
+}
 
-    if previous.Cover != edit.Cover {
-        d.releaseCover(previous.Cover)
-    }
-    d.Save()
+func (d *Data) ApplyEdit(book string, edit BookEdit, changed int64) bool {
+	if changed <= d.editChanged[book] {
+		return false
+	}
+
+	d.storeEdit(book, edit, changed)
+	return true
+}
+
+func (d *Data) EditChanged(book string) int64 {
+	return d.editChanged[book]
+}
+
+func (d *Data) EditedBooks() []string {
+	books := make([]string, 0, len(d.editChanged))
+	for book := range d.editChanged {
+		books = append(books, book)
+	}
+
+	return books
+}
+
+func (d *Data) storeEdit(book string, edit BookEdit, changed int64) {
+	previous := d.edits[book]
+	if edit == (BookEdit{}) {
+		delete(d.edits, book)
+	} else {
+		d.edits[book] = edit
+	}
+	d.editChanged[book] = changed
+
+	if previous.Cover != edit.Cover {
+		d.releaseCover(previous.Cover)
+	}
+}
+
+func (d *Data) HasCover(name string) bool {
+	if name == "" || d.file == "" {
+		return true
+	}
+
+	_, err := os.Stat(filepath.Join(d.coversFolder(), name))
+	return err == nil
+}
+
+func (d *Data) CoverData(name string) []byte {
+	if name == "" || d.file == "" {
+		return nil
+	}
+
+	return ReadCustomCover(filepath.Join(d.coversFolder(), name))
 }
 
 func (d *Data) coversFolder() string {
-    if d.file == "" {
-        return ""
-    }
+	if d.file == "" {
+		return ""
+	}
 
-    return filepath.Join(filepath.Dir(d.file), coversFolder)
+	return filepath.Join(filepath.Dir(d.file), coversFolder)
 }
 
 func (d *Data) CoverFile(book string) string {
-    name := d.edits[book].Cover
-    if name == "" || d.file == "" {
-        return ""
-    }
+	name := d.edits[book].Cover
+	if name == "" || d.file == "" {
+		return ""
+	}
 
-    return filepath.Join(d.coversFolder(), name)
+	return filepath.Join(d.coversFolder(), name)
 }
 
 func ReadCustomCover(file string) []byte {
-    if file == "" {
-        return nil
-    }
+	if file == "" {
+		return nil
+	}
 
-    data, err := os.ReadFile(file)
-    if err != nil {
-        fyne.LogError("Reading a custom cover failed", err)
-        return nil
-    }
+	data, err := os.ReadFile(file)
+	if err != nil {
+		fyne.LogError("Reading a custom cover failed", err)
+		return nil
+	}
 
-    return data
+	return data
 }
 
 func (d *Data) SaveCover(data []byte) (string, error) {
-    folder := d.coversFolder()
-    if folder == "" {
-        return "", errors.New("covers can only be saved once the library has a file")
-    }
+	folder := d.coversFolder()
+	if folder == "" {
+		return "", errors.New("covers can only be saved once the library has a file")
+	}
 
-    sum := sha256.Sum256(data)
-    name := hex.EncodeToString(sum[:12]) + ".jpg"
-    file := filepath.Join(folder, name)
-    if _, err := os.Stat(file); err == nil {
-        return name, nil
-    }
+	sum := sha256.Sum256(data)
+	name := hex.EncodeToString(sum[:12]) + ".jpg"
+	file := filepath.Join(folder, name)
+	if _, err := os.Stat(file); err == nil {
+		return name, nil
+	}
 
-    if err := os.MkdirAll(folder, 0o755); err != nil {
-        return "", fmt.Errorf("making the covers folder: %w", err)
-    }
+	if err := os.MkdirAll(folder, 0o755); err != nil {
+		return "", fmt.Errorf("making the covers folder: %w", err)
+	}
 
-    temporary, err := os.CreateTemp(folder, name+".*.tmp")
-    if err != nil {
-        return "", fmt.Errorf("saving the cover: %w", err)
-    }
-    _, writeErr := temporary.Write(data)
-    closeErr := temporary.Close()
-    if err := errors.Join(writeErr, closeErr); err != nil {
-        os.Remove(temporary.Name())
-        return "", fmt.Errorf("saving the cover: %w", err)
-    }
-    if err := os.Rename(temporary.Name(), file); err != nil {
-        os.Remove(temporary.Name())
-        return "", fmt.Errorf("saving the cover: %w", err)
-    }
+	temporary, err := os.CreateTemp(folder, name+".*.tmp")
+	if err != nil {
+		return "", fmt.Errorf("saving the cover: %w", err)
+	}
+	_, writeErr := temporary.Write(data)
+	closeErr := temporary.Close()
+	if err := errors.Join(writeErr, closeErr); err != nil {
+		os.Remove(temporary.Name())
+		return "", fmt.Errorf("saving the cover: %w", err)
+	}
+	if err := os.Rename(temporary.Name(), file); err != nil {
+		os.Remove(temporary.Name())
+		return "", fmt.Errorf("saving the cover: %w", err)
+	}
 
-    return name, nil
+	return name, nil
 }
 
 func (d *Data) coverInUse(name string) bool {
-    for _, edit := range d.edits {
-        if edit.Cover == name {
-            return true
-        }
-    }
+	for _, edit := range d.edits {
+		if edit.Cover == name {
+			return true
+		}
+	}
 
-    return false
+	return false
 }
 
 func (d *Data) releaseCover(name string) {
-    if name == "" || d.file == "" || d.coverInUse(name) {
-        return
-    }
+	if name == "" || d.file == "" || d.coverInUse(name) {
+		return
+	}
 
-    if err := os.Remove(filepath.Join(d.coversFolder(), name)); err != nil && !errors.Is(err, os.ErrNotExist) {
-        fyne.LogError("Removing an unused cover failed", err)
-    }
+	if err := os.Remove(filepath.Join(d.coversFolder(), name)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		fyne.LogError("Removing an unused cover failed", err)
+	}
 }
 
 func (d *Data) moveEdit(old, newPath string) {
-    edit, found := d.edits[old]
-    if !found {
-        return
-    }
+	if changed, found := d.editChanged[old]; found {
+		delete(d.editChanged, old)
+		d.editChanged[newPath] = max(changed, d.editChanged[newPath])
+	}
 
-    delete(d.edits, old)
-    if _, taken := d.edits[newPath]; taken {
-        d.releaseCover(edit.Cover)
-        return
-    }
+	edit, found := d.edits[old]
+	if !found {
+		return
+	}
 
-    d.edits[newPath] = edit
+	delete(d.edits, old)
+	if _, taken := d.edits[newPath]; taken {
+		d.releaseCover(edit.Cover)
+		return
+	}
+
+	d.edits[newPath] = edit
 }
 
 func (d *Data) forgetEdit(book string) bool {
-    edit, found := d.edits[book]
-    if !found {
-        return false
-    }
+	_, dated := d.editChanged[book]
+	delete(d.editChanged, book)
 
-    delete(d.edits, book)
-    d.releaseCover(edit.Cover)
-    return true
+	edit, found := d.edits[book]
+	if !found {
+		return dated
+	}
+
+	delete(d.edits, book)
+	d.releaseCover(edit.Cover)
+	return true
 }
 
 func unusedCovers(folder string, used map[string]bool) []string {
-    if folder == "" {
-        return nil
-    }
+	if folder == "" {
+		return nil
+	}
 
-    entries, err := os.ReadDir(folder)
-    if err != nil {
-        return nil
-    }
+	entries, err := os.ReadDir(folder)
+	if err != nil {
+		return nil
+	}
 
-    var unused []string
-    for _, entry := range entries {
-        name := entry.Name()
-        if !entry.IsDir() && !used[name] && !strings.HasPrefix(name, ".") {
-            unused = append(unused, name)
-        }
-    }
+	var unused []string
+	for _, entry := range entries {
+		name := entry.Name()
+		if !entry.IsDir() && !used[name] && !strings.HasPrefix(name, ".") {
+			unused = append(unused, name)
+		}
+	}
 
-    return unused
+	return unused
 }

@@ -1,18 +1,18 @@
 package main
 
 import (
-    _ "embed"
-    "os"
+	_ "embed"
+	"os"
 
-    "fyne.io/fyne/v2"
+	"fyne.io/fyne/v2"
 
-    "github.com/izzzicos/audiobook-player/ui"
+	"github.com/izzzicos/audiobook-player/ui"
 )
 
 //go:embed Icon.png
 var icon []byte
 
 func main() {
-    playerUI := ui.NewUI(fyne.NewStaticResource("Icon.png", icon))
-    playerUI.Run(os.Args[1:])
+	playerUI := ui.NewUI(fyne.NewStaticResource("Icon.png", icon))
+	playerUI.Run(os.Args[1:])
 }

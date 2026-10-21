@@ -1,348 +1,369 @@
 package autoimport
 
 import (
-    "errors"
-    "fmt"
-    "sync/atomic"
-    "time"
+	"errors"
+	"fmt"
+	"path/filepath"
+	"sync/atomic"
+	"time"
 
-    "fyne.io/fyne/v2"
-    "fyne.io/fyne/v2/canvas"
-    "fyne.io/fyne/v2/container"
-    "fyne.io/fyne/v2/theme"
-    "fyne.io/fyne/v2/widget"
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
+	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/theme"
+	"fyne.io/fyne/v2/widget"
 
-    "github.com/ncruces/zenity"
+	"github.com/ncruces/zenity"
 
-    "github.com/izzzicos/audiobook-player/library"
-    "github.com/izzzicos/audiobook-player/ui/kit"
-    "github.com/izzzicos/audiobook-player/ui/shelf"
-    "github.com/izzzicos/audiobook-player/ui/userdata"
-    "github.com/izzzicos/audiobook-player/vfs"
+	"github.com/izzzicos/audiobook-player/library"
+	"github.com/izzzicos/audiobook-player/ui/kit"
+	"github.com/izzzicos/audiobook-player/ui/shelf"
+	"github.com/izzzicos/audiobook-player/ui/userdata"
+	"github.com/izzzicos/audiobook-player/vfs"
 )
 
-const preferenceWatchedFolder = "libraryFolder"
+const (
+	preferenceWatchedFolder = "libraryFolder"
+	scanCacheName           = "scan-cache.json"
+)
 
 type Importer struct {
-    StartFolder func() string
+	StartFolder func() string
 
-    window fyne.Window
-    prefs  fyne.Preferences
-    data   *userdata.Data
-    shelf  *shelf.Shelf
-    picker *kit.Picker
-    async  func(func())
+	window fyne.Window
+	prefs  fyne.Preferences
+	data   *userdata.Data
+	shelf  *shelf.Shelf
+	picker *kit.Picker
+	async  func(func())
 
-    section       fyne.CanvasObject
-    folderLabel   *widget.Label
-    folderActions *fyne.Container
-    status        *widget.Label
+	section       fyne.CanvasObject
+	folderLabel   *widget.Label
+	folderActions *fyne.Container
+	status        *widget.Label
 
-    folder     string
-    lastImport time.Time
-    importing  atomic.Bool
-    network    atomic.Bool
+	folder     string
+	lastImport time.Time
+	importing  atomic.Bool
+	network    atomic.Bool
+	scanner    *library.Scanner
 }
 
 func New(window fyne.Window, prefs fyne.Preferences, data *userdata.Data, books *shelf.Shelf, picker *kit.Picker, async func(func())) *Importer {
-    im := &Importer{
-        window: window,
-        prefs:  prefs,
-        data:   data,
-        shelf:  books,
-        picker: picker,
-        async:  async,
-    }
-    im.build()
+	im := &Importer{
+		window: window,
+		prefs:  prefs,
+		data:   data,
+		shelf:  books,
+		picker: picker,
+		async:  async,
+	}
+	im.build()
 
-    return im
+	return im
 }
 
 func (im *Importer) build() {
-    im.folderLabel = widget.NewLabel("")
-    im.folderLabel.Truncation = fyne.TextTruncateEllipsis
+	im.folderLabel = widget.NewLabel("")
+	im.folderLabel.Truncation = fyne.TextTruncateEllipsis
 
-    folderBackground := canvas.NewRectangle(theme.Color(theme.ColorNameInputBackground))
-    folderBackground.CornerRadius = theme.InputRadiusSize()
-    kit.FollowTheme(func() {
-        folderBackground.FillColor = theme.Color(theme.ColorNameInputBackground)
-        folderBackground.CornerRadius = theme.InputRadiusSize()
-        folderBackground.Refresh()
-    })
+	folderBackground := canvas.NewRectangle(theme.Color(theme.ColorNameInputBackground))
+	folderBackground.CornerRadius = theme.InputRadiusSize()
+	kit.FollowTheme(func() {
+		folderBackground.FillColor = theme.Color(theme.ColorNameInputBackground)
+		folderBackground.CornerRadius = theme.InputRadiusSize()
+		folderBackground.Refresh()
+	})
 
-    folderRow := container.NewStack(
-        folderBackground,
-        container.NewBorder(nil, nil, container.NewPadded(widget.NewIcon(theme.FolderIcon())), nil, im.folderLabel),
-    )
+	folderRow := container.NewStack(
+		folderBackground,
+		container.NewBorder(nil, nil, container.NewPadded(widget.NewIcon(theme.FolderIcon())), nil, im.folderLabel),
+	)
 
-    chooseButton := widget.NewButtonWithIcon("Choose folder…", theme.FolderOpenIcon(), im.chooseFolder)
-    checkButton := widget.NewButtonWithIcon("Check now", theme.ViewRefreshIcon(), im.Scan)
-    stopButton := widget.NewButtonWithIcon("Stop importing", theme.ContentClearIcon(), func() {
-        im.SetFolder("")
-    })
-    stopButton.Importance = widget.LowImportance
-    im.folderActions = container.NewHBox(checkButton, stopButton)
+	chooseButton := widget.NewButtonWithIcon("Choose folder…", theme.FolderOpenIcon(), im.chooseFolder)
+	checkButton := widget.NewButtonWithIcon("Check now", theme.ViewRefreshIcon(), im.CheckNow)
+	stopButton := widget.NewButtonWithIcon("Stop importing", theme.ContentClearIcon(), func() {
+		im.SetFolder("")
+	})
+	stopButton.Importance = widget.LowImportance
+	im.folderActions = container.NewHBox(checkButton, stopButton)
 
-    im.status = widget.NewLabel("")
-    im.status.SizeName = theme.SizeNameCaptionText
-    im.status.Importance = widget.LowImportance
-    im.status.Wrapping = fyne.TextWrapWord
+	im.status = widget.NewLabel("")
+	im.status.SizeName = theme.SizeNameCaptionText
+	im.status.Importance = widget.LowImportance
+	im.status.Wrapping = fyne.TextWrapWord
 
-    im.updateFolder()
+	im.updateFolder()
 
-    im.section = kit.Section(
-        "Library folder",
-        "Audiobooks in this folder and its subfolders are added to your library automatically, "+
-            "including books you copy into it later. A folder of audio files is one book; "+
-            "each .m4b file is a book of its own.",
-        folderRow,
-        container.NewBorder(nil, nil, chooseButton, nil, im.folderActions),
-        im.status,
-    )
+	im.section = kit.Section(
+		"Library folder",
+		"Audiobooks in this folder and its subfolders are added to your library automatically, "+
+			"including books you copy into it later. A folder of audio files is one book; "+
+			"each .m4b file is a book of its own.",
+		folderRow,
+		container.NewBorder(nil, nil, chooseButton, nil, im.folderActions),
+		im.status,
+	)
 }
 
 func (im *Importer) Section() fyne.CanvasObject {
-    return im.section
+	return im.section
 }
 
 func (im *Importer) Folder() string {
-    return im.folder
+	return im.folder
 }
 
 var reachable = library.Reachable
 
 func exists(path string) bool {
-    _, err := vfs.Stat(path)
-    return err == nil
+	_, err := vfs.Stat(path)
+	return err == nil
 }
 
 func (im *Importer) chooseFolder() {
-    start := im.folder
-    if start == "" && im.StartFolder != nil {
-        start = im.StartFolder()
-    }
-    if start == "" {
-        start = kit.HomeFolder()
-    }
+	start := im.folder
+	if start == "" && im.StartFolder != nil {
+		start = im.StartFolder()
+	}
+	if start == "" {
+		start = kit.HomeFolder()
+	}
 
-    kit.Browse(im.picker, im.window,
-        func() (string, error) {
-            return zenity.SelectFile(
-                zenity.Title("Choose your audiobook folder"),
-                zenity.Filename(kit.WithTrailingSeparator(start)),
-                zenity.Directory(),
-            )
-        },
-        im.SetFolder,
-        func() {
-            kit.ShowFolderDialog(im.window, start, im.SetFolder)
-        },
-    )
+	kit.Browse(im.picker, im.window,
+		func() (string, error) {
+			return zenity.SelectFile(
+				zenity.Title("Choose your audiobook folder"),
+				zenity.Filename(kit.WithTrailingSeparator(start)),
+				zenity.Directory(),
+			)
+		},
+		im.SetFolder,
+		func() {
+			kit.ShowFolderDialog(im.window, start, im.SetFolder)
+		},
+	)
 }
 
 const (
-    Interval          = 2 * time.Minute
-    networkInterval   = 10 * time.Minute
-    autoImportSettle  = 30 * time.Second
-    libraryTabRecheck = 30 * time.Second
-    networkTabRecheck = 2 * time.Minute
-    tickSlack         = 10 * time.Second
+	Interval          = 2 * time.Minute
+	networkInterval   = 10 * time.Minute
+	autoImportSettle  = 30 * time.Second
+	libraryTabRecheck = 30 * time.Second
+	networkTabRecheck = 2 * time.Minute
+	tickSlack         = 10 * time.Second
 )
 
 type foundBook struct {
-    path     string
-    parts    int
-    modified time.Time
+	path     string
+	parts    int
+	modified time.Time
 }
 
 func (im *Importer) SetFolder(folder string) {
-    if folder != "" {
-        folder = library.Normalize(folder)
-    }
+	if folder != "" {
+		folder = library.Normalize(folder)
+	}
 
-    if previous := im.folder; previous != "" && folder != "" && previous != folder {
-        im.shelf.MoveFolder(previous, folder)
-    }
+	if previous := im.folder; previous != "" && folder != "" && previous != folder {
+		im.shelf.MoveFolder(previous, folder)
+	}
 
-    im.folder = folder
-    im.lastImport = time.Time{}
-    im.network.Store(false)
-    im.prefs.SetString(preferenceWatchedFolder, folder)
-    im.updateFolder()
-    im.Scan()
+	im.folder = folder
+	im.lastImport = time.Time{}
+	im.scanner = im.newScanner().Forget()
+	im.network.Store(false)
+	im.prefs.SetString(preferenceWatchedFolder, folder)
+	im.updateFolder()
+	im.Scan()
 }
 
 func (im *Importer) Scan() {
-    folder := im.folder
-    if folder == "" {
-        return
-    }
+	folder := im.folder
+	if folder == "" {
+		return
+	}
 
-    if !im.importing.CompareAndSwap(false, true) {
-        return
-    }
+	if !im.importing.CompareAndSwap(false, true) {
+		return
+	}
 
-    im.setStatus("Looking for new books…")
+	im.setStatus("Looking for new books…")
+	if im.scanner == nil {
+		im.scanner = im.newScanner()
+	}
+	scanner := im.scanner
 
-    im.async(func() {
-        if err := reachable(folder, library.ResponseTimeout); err != nil {
-            moved := ""
-            if !errors.Is(err, library.ErrNotResponding) {
-                moved = movedDrive(folder)
-            }
+	im.async(func() {
+		if err := reachable(folder, library.ResponseTimeout); err != nil {
+			moved := ""
+			if !errors.Is(err, library.ErrNotResponding) {
+				moved = movedDrive(folder)
+			}
 
-            fyne.Do(func() {
-                im.importing.Store(false)
-                if moved != "" && folder == im.folder {
-                    im.SetFolder(moved)
-                    return
-                }
-                im.showUnreachable(folder, err)
-            })
-            return
-        }
+			fyne.Do(func() {
+				im.importing.Store(false)
+				if moved != "" && folder == im.folder {
+					im.SetFolder(moved)
+					return
+				}
+				im.showUnreachable(folder, err)
+			})
+			return
+		}
 
-        im.network.Store(library.IsNetwork(folder))
-        found, err := findImportableBooks(folder)
+		im.network.Store(library.IsNetwork(folder))
+		found, err := findImportableBooks(scanner, folder)
+		if err := scanner.Save(); err != nil {
+			fyne.LogError("Saving what the library folder holds failed, so the next start reads it all again", err)
+		}
 
-        fyne.Do(func() {
-            im.importing.Store(false)
-            im.applyImport(folder, found, err)
-        })
-    })
+		fyne.Do(func() {
+			im.importing.Store(false)
+			im.applyImport(folder, found, err)
+		})
+	})
 }
 
 func movedDrive(folder string) string {
-    for _, candidate := range library.OtherDrives(folder) {
-        if exists(candidate) {
-            return candidate
-        }
-    }
+	for _, candidate := range library.OtherDrives(folder) {
+		if exists(candidate) {
+			return candidate
+		}
+	}
 
-    return ""
+	return ""
 }
 
 func (im *Importer) showUnreachable(folder string, err error) {
-    if folder != im.folder {
-        return
-    }
+	if folder != im.folder {
+		return
+	}
 
-    im.lastImport = time.Now()
-    checked := im.lastImport.Format("15:04")
-    if errors.Is(err, library.ErrNotResponding) {
-        im.setStatus(fmt.Sprintf("The library folder isn't responding (checked at %s). Check the connection to the drive or server, for example your VPN.", checked))
-        return
-    }
+	im.lastImport = time.Now()
+	checked := im.lastImport.Format("15:04")
+	if errors.Is(err, library.ErrNotResponding) {
+		im.setStatus(fmt.Sprintf("The library folder isn't responding (checked at %s). Check the connection to the drive or server, for example your VPN.", checked))
+		return
+	}
 
-    im.setStatus(fmt.Sprintf("The library folder isn't available (checked at %s). If it's on a drive or server, check that it's connected.", checked))
+	im.setStatus(fmt.Sprintf("The library folder isn't available (checked at %s). If it's on a drive or server, check that it's connected.", checked))
 }
 
 func (im *Importer) due(local, network time.Duration) bool {
-    interval := local
-    if im.network.Load() {
-        interval = network
-    }
+	interval := local
+	if im.network.Load() {
+		interval = network
+	}
 
-    return time.Since(im.lastImport) >= interval-tickSlack
+	return time.Since(im.lastImport) >= interval-tickSlack
 }
 
 func (im *Importer) ScanIfDue() {
-    if im.due(Interval, networkInterval) {
-        im.Scan()
-    }
+	if im.due(Interval, networkInterval) {
+		im.Scan()
+	}
 }
 
 func (im *Importer) ScanIfStale() {
-    if im.due(libraryTabRecheck, networkTabRecheck) {
-        im.Scan()
-    }
+	if im.due(libraryTabRecheck, networkTabRecheck) {
+		im.Scan()
+	}
 }
 
-func findImportableBooks(folder string) ([]foundBook, error) {
-    paths, err := library.FindBooks(folder)
-    if err != nil {
-        return nil, err
-    }
+func findImportableBooks(scanner *library.Scanner, folder string) ([]foundBook, error) {
+	found, err := scanner.Scan(folder)
+	if err != nil {
+		return nil, err
+	}
 
-    books := make([]foundBook, 0, len(paths))
-    for _, path := range paths {
-        parts, modified, err := library.Inspect(path)
-        if err != nil {
-            continue
-        }
+	books := make([]foundBook, len(found))
+	for i, book := range found {
+		books[i] = foundBook{path: book.Path, parts: book.Parts, modified: book.Modified}
+	}
 
-        books = append(books, foundBook{path: path, parts: parts, modified: modified})
-    }
+	return books, nil
+}
 
-    return books, nil
+func (im *Importer) CheckNow() {
+	im.scanner = im.newScanner().Forget()
+	im.Scan()
+}
+
+func (im *Importer) newScanner() *library.Scanner {
+	if file := im.data.File(); file != "" {
+		return library.SavedScanner(filepath.Join(filepath.Dir(file), scanCacheName))
+	}
+
+	return library.NewScanner()
 }
 
 func (im *Importer) applyImport(folder string, found []foundBook, err error) {
-    if folder != im.folder {
-        return
-    }
+	if folder != im.folder {
+		return
+	}
 
-    im.lastImport = time.Now()
-    checked := im.lastImport.Format("15:04")
+	im.lastImport = time.Now()
+	checked := im.lastImport.Format("15:04")
 
-    if err != nil {
-        im.setStatus(fmt.Sprintf("Couldn't read the folder at %s: %v", checked, err))
-        return
-    }
+	if err != nil {
+		im.setStatus(fmt.Sprintf("Couldn't read the folder at %s: %v", checked, err))
+		return
+	}
 
-    var added []string
-    copying := 0
-    for _, book := range found {
-        if im.data.Ignored[book.path] {
-            continue
-        }
+	var added []string
+	copying := 0
+	for _, book := range found {
+		if im.data.Ignored[book.path] {
+			continue
+		}
 
-        if time.Since(book.modified) < autoImportSettle {
-            copying++
-            continue
-        }
+		if time.Since(book.modified) < autoImportSettle {
+			copying++
+			continue
+		}
 
-        switch {
-        case !im.shelf.Contains(book.path):
-            added = append(added, book.path)
-        case im.shelf.Stale(book.path, book.parts):
-            im.shelf.Reload(book.path)
-        }
-    }
+		switch {
+		case !im.shelf.Contains(book.path):
+			added = append(added, book.path)
+		case im.shelf.Stale(book.path, book.parts):
+			im.shelf.Reload(book.path)
+		}
+	}
 
-    im.shelf.Import(added, func(result shelf.ImportResult) {
-        status := fmt.Sprintf("Last checked at %s · %s", checked, kit.CountPhrase(result.Added, "new book", "new books", "no new books"))
-        if copies := len(result.Copies); copies > 0 {
-            status += " · " + kit.CountPhrase(copies, "copy of a book already in your library was skipped", "copies of books already in your library were skipped", "")
-        }
-        if copying > 0 {
-            status += " · " + kit.CountPhrase(copying, "book is still being copied", "books are still being copied", "")
-        }
-        im.setStatus(status)
-    })
+	im.shelf.Import(added, func(result shelf.ImportResult) {
+		status := fmt.Sprintf("Last checked at %s · %s", checked, kit.CountPhrase(result.Added, "new book", "new books", "no new books"))
+		if copies := len(result.Copies); copies > 0 {
+			status += " · " + kit.CountPhrase(copies, "copy of a book already in your library was skipped", "copies of books already in your library were skipped", "")
+		}
+		if copying > 0 {
+			status += " · " + kit.CountPhrase(copying, "book is still being copied", "books are still being copied", "")
+		}
+		im.setStatus(status)
+	})
 }
 
 func (im *Importer) Load() {
-    im.folder = im.prefs.String(preferenceWatchedFolder)
-    im.updateFolder()
-    im.Scan()
+	im.folder = im.prefs.String(preferenceWatchedFolder)
+	im.updateFolder()
+	im.Scan()
 }
 
 func (im *Importer) updateFolder() {
-    if im.folder == "" {
-        im.folderLabel.SetText("No folder chosen")
-        im.folderLabel.Importance = widget.LowImportance
-        im.folderActions.Hide()
-        im.status.SetText("Books are only added when you add or open them.")
-    } else {
-        im.folderLabel.SetText(vfs.Display(im.folder))
-        im.folderLabel.Importance = widget.MediumImportance
-        im.folderActions.Show()
-    }
+	if im.folder == "" {
+		im.folderLabel.SetText("No folder chosen")
+		im.folderLabel.Importance = widget.LowImportance
+		im.folderActions.Hide()
+		im.status.SetText("Books are only added when you add or open them.")
+	} else {
+		im.folderLabel.SetText(vfs.Display(im.folder))
+		im.folderLabel.Importance = widget.MediumImportance
+		im.folderActions.Show()
+	}
 
-    im.folderLabel.Refresh()
+	im.folderLabel.Refresh()
 }
 
 func (im *Importer) setStatus(text string) {
-    im.status.SetText(text)
+	im.status.SetText(text)
 }
