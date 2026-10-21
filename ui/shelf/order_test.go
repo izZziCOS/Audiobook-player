@@ -3,6 +3,7 @@ package shelf
 import (
     "path/filepath"
     "slices"
+    "strings"
     "testing"
 
     "fyne.io/fyne/v2/test"
@@ -178,5 +179,33 @@ func TestRatingsOnCardsAndSortingByRating(t *testing.T) {
     }
     if titles := shelfTitles(s); titles[len(titles)-1] != "Dune" {
         t.Fatalf("books without a rating should come last, got %v", titles)
+    }
+}
+
+func TestResettingProgress(t *testing.T) {
+    s, _ := newTestShelf(t)
+    root, hobbit := testbooks.Library(t)
+    s.AddFrom([]string{root})
+    var restarted []string
+    s.OnRestart = func(path string) { restarted = append(restarted, path) }
+
+    if slices.Contains(labels(s.cardMenu(s.find(hobbit))), "Reset progress…") {
+        t.Fatal("a book that hasn't been started has no progress to reset")
+    }
+
+    s.data.Positions[hobbit] = userdata.Position{Part: filepath.Join(hobbit, "Part 2.flac"), Position: 3, Listened: 100, Finished: true}
+    s.Refresh()
+    menuItem(t, s.cardMenu(s.find(hobbit)), "Reset progress…").Action()
+    if s.data.Positions[hobbit].Finished == false {
+        t.Fatal("nothing should change until the reset is confirmed")
+    }
+    test.Tap(overlayObject(s, func(button *widget.Button) bool { return button.Text == "Reset progress" }))
+
+    position := s.data.Positions[hobbit]
+    if position.Part != filepath.Join(hobbit, "Part 1.wav") || position.Position != 0 || position.Finished || position.Listened <= 100 {
+        t.Fatalf("the book should be back at the start, got %+v", position)
+    }
+    if card, _ := s.Card(hobbit); !strings.HasPrefix(card.Status, "Not started") || len(restarted) != 1 {
+        t.Fatalf("the card shows %q", card.Status)
     }
 }

@@ -21,7 +21,7 @@ A small desktop audiobook player for macOS and Windows (Linux works too), writte
 - Skip 30 seconds back or forward. The remaining time takes the playback speed into account.
 - **Sleep timer**: the moon button next to the speed stops playback after 5 to 90 minutes, at the **end of the chapter** (books with chapters) or at the **end of this part** (books of several parts). It shows the time left, taking the playback speed into account, only counts down while a book is playing, and fades the volume out over the last 10 seconds before pausing. Stopping at the end of a chapter or part leaves the book at the start of the next one, so pressing play carries straight on. If you skip into another chapter, the timer stops at the end of that one instead.
 - Shows cover art: an image with the same name as the audio file, else artwork embedded in the file, else `cover`, `folder` or `front` `.jpg`/`.png`, else the first image in the folder.
-- A warm light and dark look. It follows your system setting, or you can choose Light or Dark in **Settings**. The Now Playing screen is tinted with the colours of the book's cover. On Windows the title bar turns light or dark to match.
+- A warm light and dark look. It follows your system setting, or you can choose Light or Dark in **Settings**. The Now Playing screen is tinted with the colours of the book's cover. On Windows the title bar turns light or dark to match, and on Windows 11 the title bar and window border take the app's own colours.
 - **Statistics**: total listening time, this week, daily average, books finished, listening streaks and average speed, with daily and weekly charts, a listening calendar and your most-listened books.
 - **Collections** of your own, such as Currently reading, Classics or For bedtime. See [Collections](#collections).
 - **Library folder**: choose a folder in **Settings** and the audiobooks in it are added to the library automatically, including ones you copy in later.
@@ -58,6 +58,7 @@ The **Library** tab shows every book you've added as a card with its cover, titl
 - Any book you open with **Open file** or **Open folder** is added automatically. Opening one part of a book that's already in your library opens that book at that part.
 - Each book is only added once, however you reach it. See [Duplicates](#duplicates).
 - Click a book to carry on from where you stopped. Right-click a book to edit its details or to remove it from the library; neither touches the files. **Remove from library…** asks first, so a stray click can't take a book away.
+- **Reset progress…**, in the same menu for a book you've started, puts it back at the beginning and clears its finished mark, after asking. If you sync between computers, the others start it from the beginning too. Your listening statistics are kept.
 - Type in the search box (or press ⌘F on a Mac, Ctrl+F elsewhere) to find a book by its title, author, or file or folder name. Upper and lower case and accents don't matter, so `bronte` finds *Brontë*, and every word you type has to match.
 - **All**, **In progress**, **Not started** and **Finished** above the books show only the books in that state. They work together with the search box, so **Finished** plus `tolkien` shows the Tolkien books you've finished.
 - **Sort** orders the books by:
@@ -84,11 +85,12 @@ Adding folders that overlap, such as `Audiobooks` and then `Audiobooks/Tolkien`,
 Right-click a book and choose **About this book…**, or click **About** at the top of Now Playing, to see its Audible rating, how many people rated it, its description, narrator, release date and length.
 
 - Audible look-ups are **off until you turn them on**, in **Settings → Ratings and descriptions** or with the button in the About window. Choose your **Audible store** there too (United States, United Kingdom, Germany and others), because ratings differ between stores.
-- The first time, **Find on Audible…** searches for the book's title and author and lists the editions it finds, the one most people rated first, since its rating is the most reliable. Words like *(Unabridged)* are left out of the search, and you can change the title and author before searching again. If the book's files carry an Audible product number (ASIN), as many files bought from Audible do, that edition is listed first.
-- Choose the edition you have. The app remembers it, so it never guesses again, and the rating appears on the book's card, for example `★ 4.5 · 23k`. **Change edition…** picks another and **Not this book** removes the match.
+- Once look-ups are on, every book in your library is matched automatically in the background, one book every few seconds: the app searches Audible for its title and author and takes the first edition, the one most people rated, since its rating is the most reliable. If the book's files carry an Audible product number (ASIN), as many files bought from Audible do, that edition is used instead. Words like *(Unabridged)* are left out of the search, and a result is only used if its title shares a word with the book's, so a book called *Part 1* isn't matched to something unrelated.
+- The rating then appears on the book's card, for example `★ 4.5 · 23k`. If the match is wrong, open **About this book** and choose **Change edition…** to pick another from the list, or **Not this book** to remove it; a book you've said *Not this book* to isn't matched automatically again. **Find on Audible…** searches by hand, and you can change the title and author before searching.
+- A book Audible had nothing for is searched again after a month, or straight away if you correct its title or author with **Edit details**.
 - Ratings from fewer than 100 people are marked as possibly unreliable.
-- The details are saved on your computer and refreshed when you open About for a book whose details are more than 30 days old. Nothing is downloaded in the background.
-- **What is sent:** only the title and author you search for, or the product number of the edition you chose, and only to the Audible store you picked. Nothing is sent while look-ups are off; the details already saved stay visible.
+- The details are saved on your computer and refreshed in the background once they're more than 30 days old.
+- **What is sent:** each book's title and author, or its Audible product number, and only to the Audible store you picked. Nothing is sent while look-ups are off; the details already saved stay visible.
 - This uses the same catalogue look-up that Audible's own apps and other audiobook players use. It isn't an official, documented service, so it may stop working if Audible changes it.
 
 #### Editing a book's details
@@ -148,6 +150,8 @@ You can keep your audiobooks on a NAS, such as a Synology, or any computer that 
 3. Choose the shared folder in **Settings → Library folder**.
 
 Books play straight from the share. Covers and part lengths are remembered on your computer, so the Library opens without reading every book over the network. When the VPN is off or the NAS is asleep, nothing freezes the window: books show `Not connected`, the library folder's status says the folder isn't available or isn't responding, and nothing about your books is forgotten.
+
+Opening a book never freezes the window: Now Playing says *Opening…* until it's ready, and pressing play meanwhile starts it as soon as it is. MP3 files take longest to open over a network, because the whole part has to be read once before it can play; over a VPN this can take a minute for a long part. While you listen, the next part is opened in the background before the current one ends, so moving on to it is instant. Downloading a book for offline listening makes it open straight away.
 
 While a book plays, the app reads up to 20 seconds ahead, so short drop-outs in the connection aren't heard at all. If the connection stays down longer, playback goes quiet and Now Playing says *Waiting for the drive or server…*. It carries on by itself when the connection comes back, or stops with a message if your computer gives up on the server.
 

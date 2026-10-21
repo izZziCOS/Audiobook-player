@@ -114,24 +114,41 @@ func (p *Player) OpenBook(book *library.Book) {
     p.showBook(book, saved.Position)
 }
 
+func (p *Player) OpenBookAndPlay(book *library.Book) {
+    p.playAfterOpen = true
+    p.OpenBook(book)
+}
+
 func (p *Player) showBook(book *library.Book, position float64) {
     p.Offline.Prepare(book)
-    if !p.loadAudio(book.Key(), book.Playable()) {
-        return
-    }
+    p.forgetPrefetched()
 
-    p.book = book
-    p.updateBookInfo()
+    p.load(book.Key(), book.Playable(), func(ok bool) {
+        if !ok {
+            return
+        }
 
-    if position > 0 {
-        _ = p.audio.SeekTo(position)
-        p.refreshProgress()
-    }
+        p.book = book
+        p.updateBookInfo()
 
-    p.SavePosition()
-    p.loadDurations(book)
-    if p.OnBookOpened != nil {
-        p.OnBookOpened(book.Key())
+        if position > 0 {
+            _ = p.audio.SeekTo(position)
+            p.refreshProgress()
+        }
+
+        p.SavePosition()
+        p.loadDurations(book)
+        if p.OnBookOpened != nil {
+            p.OnBookOpened(book.Key())
+        }
+        p.playIfAsked()
+    })
+}
+
+func (p *Player) playIfAsked() {
+    if p.playAfterOpen {
+        p.playAfterOpen = false
+        p.Play()
     }
 }
 
@@ -140,27 +157,36 @@ func (p *Player) goToRelativePart(offset int) {
         return
     }
 
-    p.goToPart(p.book.Index+offset, p.playing)
+    p.goToPart(p.book.Index+offset, p.playing, nil)
 }
 
-func (p *Player) goToPart(index int, play bool) {
+func (p *Player) goToPart(index int, play bool, then func()) {
     if p.book == nil || !p.book.HasPart(index) {
         return
     }
 
-    if !p.loadAudio(p.book.Key(), p.book.PlayablePart(index)) {
-        return
-    }
+    book := p.book
+    p.playAfterOpen = play
+    p.load(book.Key(), book.PlayablePart(index), func(ok bool) {
+        if !ok || p.book != book {
+            return
+        }
 
-    p.book.Index = index
-    p.updateBookInfo()
+        book.Index = index
+        p.updateBookInfo()
+        if then != nil {
+            then()
+        }
 
-    if play {
-        p.audio.Play()
-        p.setPlaying(true)
-    }
+        if p.playAfterOpen {
+            p.playAfterOpen = false
+            p.audio.Play()
+            p.setPlaying(true)
+        }
 
-    p.SavePosition()
+        p.refreshProgress()
+        p.SavePosition()
+    })
 }
 
 func (p *Player) handlePartEnd() {
@@ -177,10 +203,11 @@ func (p *Player) handlePartEnd() {
     stop := p.sleepsAtPartEnd()
 
     if p.book != nil && p.book.HasPart(p.book.Index+1) {
-        p.goToPart(p.book.Index+1, !stop)
-        if stop {
-            p.fallAsleep()
-        }
+        p.goToPart(p.book.Index+1, !stop, func() {
+            if stop {
+                p.fallAsleep()
+            }
+        })
         return
     }
 
@@ -194,7 +221,7 @@ func (p *Player) handlePartEnd() {
 
 func (p *Player) rewindBook() {
     if p.book != nil && p.book.Index > 0 {
-        p.goToPart(0, false)
+        p.goToPart(0, false, nil)
         return
     }
 
@@ -361,7 +388,7 @@ func (p *Player) showParts() {
     }
 
     p.showContents("Parts", rows, p.book.Index, func(id int) {
-        p.goToPart(id, p.playing)
+        p.goToPart(id, p.playing, nil)
     })
 }
 

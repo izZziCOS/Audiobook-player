@@ -4,6 +4,6 @@ package titlebar
 
 import "fyne.io/fyne/v2"
 
-func SetDark(window fyne.Window, dark bool) error {
+func Match(fyne.Window, Look) error {
     return nil
 }

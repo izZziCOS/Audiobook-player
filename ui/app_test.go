@@ -691,3 +691,23 @@ func TestADownloadedBookPlaysWhenTheServerIsAway(t *testing.T) {
         t.Fatal("removing the book from the library should delete its copy")
     }
 }
+
+func TestAResetReachesYourOtherComputers(t *testing.T) {
+    laptop, desktop, laptopHobbit, desktopHobbit := twoComputers(t)
+
+    laptop.data.Positions[laptopHobbit] = userdata.Position{Part: filepath.Join(laptopHobbit, "Part 2.flac"), Position: 0.5, Listened: time.Now().Add(-time.Hour).Unix(), Finished: true}
+    laptop.syncer.Write()
+    desktop.syncer.Pull(nil)
+    if !desktop.data.Positions[desktopHobbit].Finished {
+        t.Fatal("setup: the desktop should know the laptop finished the book")
+    }
+
+    desktop.shelf.Refresh()
+    desktop.data.Restart(desktopHobbit, filepath.Join(desktopHobbit, "Part 1.wav"))
+    desktop.syncer.Write()
+    laptop.syncer.Pull(nil)
+
+    if position := laptop.data.Positions[laptopHobbit]; position.Finished || position.Part != filepath.Join(laptopHobbit, "Part 1.wav") || position.Position != 0 {
+        t.Fatalf("the laptop should start the book from the beginning too, got %+v", position)
+    }
+}

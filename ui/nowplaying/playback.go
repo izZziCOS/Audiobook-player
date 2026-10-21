@@ -1,76 +1,22 @@
 package nowplaying
 
 import (
-    "fmt"
-        "os"
         "strconv"
         "strings"
         "time"
 
-        "fyne.io/fyne/v2"
         "fyne.io/fyne/v2/dialog"
         "fyne.io/fyne/v2/theme"
 
-        "github.com/izzzicos/audiobook-player/audio"
-        "github.com/izzzicos/audiobook-player/library"
         "github.com/izzzicos/audiobook-player/ui/kit"
     )
 
-func (p *Player) loadAudio(key, path string) bool {
-    file, err := os.Open(path)
-    if err != nil {
-        dialog.ShowError(err, p.window)
-        return false
-    }
-
-    streamer, format, err := audio.Decode(file)
-    if err != nil {
-        file.Close()
-        dialog.ShowError(err, p.window)
-        return false
-    }
-
-    if streamer.Len() <= 0 {
-        streamer.Close()
-        file.Close()
-        dialog.ShowError(
-            fmt.Errorf("the selected audio file is empty"),
-            p.window,
-        )
-        return false
-    }
-
-    if p.audio != nil {
-        _ = p.audio.Close()
-    }
-
-    player := audio.NewPlayer(
-        format.SampleRate,
-        audio.NewBuffered(streamer, format.SampleRate),
-    )
-    player.OnEnd = func() {
-        fyne.Do(func() {
-            if p.audio == player {
-                p.handlePartEnd()
-            }
-        })
-    }
-    p.audio = player
-    p.forgetSleepPosition()
-
-    p.tags = library.ReadMetadata(path)
-    p.chapters = library.ReadChapters(path)
-    p.foundCover, _ = library.FindCover(path, p.tags.Picture)
-    p.applyEdit(key)
-
-    p.setPlaying(false)
-    p.audio.SetVolume(p.volume.Value)
-    p.changeSpeed(p.speedChoice)
-
-    return true
-}
-
 func (p *Player) TogglePlay() {
+    if p.opening {
+        p.playAfterOpen = !p.playAfterOpen
+        p.showPlayButton(p.playAfterOpen)
+        return
+    }
     if p.audio == nil {
         return
     }
@@ -92,13 +38,17 @@ func (p *Player) setPlaying(playing bool) {
         defer p.OnPaused()
     }
 
+    p.showPlayButton(playing)
+
+    p.publishStatus(time.Now())
+}
+
+func (p *Player) showPlayButton(playing bool) {
     if playing {
         p.playButton.SetIcon(theme.MediaPauseIcon())
     } else {
         p.playButton.SetIcon(theme.MediaPlayIcon())
     }
-
-    p.publishStatus(time.Now())
 }
 
 func (p *Player) Skip(seconds int) {
@@ -131,19 +81,11 @@ func (p *Player) Seek(seconds float64) error {
         return p.audio.SeekTo(position)
     }
 
-    playing := p.playing
-    p.goToPart(index, false)
-    if p.book.Index != index {
-        return nil
-    }
+    p.goToPart(index, p.playing, func() {
+        _ = p.audio.SeekTo(position)
+    })
 
-    err := p.audio.SeekTo(position)
-    if playing {
-        p.audio.Play()
-        p.setPlaying(true)
-    }
-
-    return err
+    return nil
 }
 
 func (p *Player) changeSpeed(value string) {

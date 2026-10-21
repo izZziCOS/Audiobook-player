@@ -139,6 +139,10 @@ func (ui *UI) build() {
     ui.player.Offline = ui.offline
     ui.shelf.Offline = ui.offline
     ui.offline.OnChanged = ui.shelf.DownloadChanged
+    ui.shelf.OnRestart = func(path string) {
+        ui.player.Restart(path)
+        ui.syncer.Write()
+    }
     ui.offline.Title = ui.shelf.Title
     ui.shelf.Open = ui.playFromShelf
     ui.shelf.Show = ui.showLibrary
@@ -244,7 +248,7 @@ func (ui *UI) resumeLocalBook() {
             if err == nil && ui.player.Book() == nil {
                 ui.player.Resume(last.Folder, last.File, 0)
             }
-            if ui.player.Book() == nil {
+            if ui.player.Book() == nil && !ui.player.Opening() {
                 ui.showLibrary()
             }
         })

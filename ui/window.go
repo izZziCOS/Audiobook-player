@@ -61,13 +61,8 @@ func (ui *UI) playFromShelf(path string) error {
         return err
     }
 
-    ui.player.OpenBook(book)
-    if ui.player.Book() != book {
-        return nil
-    }
-
     ui.tabs.Select(ui.playerTab)
-    ui.player.Play()
+    ui.player.OpenBookAndPlay(book)
     return nil
 }
 
@@ -138,6 +133,7 @@ func (ui *UI) everySaveTick() {
     ui.data.Flush()
     ui.syncer.Tick(time.Now())
     ui.offline.Tick(time.Now())
+    ui.about.MatchAutomatically(ui.shelf.AudibleCandidates())
 }
 
 func (ui *UI) tick() {

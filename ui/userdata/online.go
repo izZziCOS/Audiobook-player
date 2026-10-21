@@ -31,6 +31,21 @@ func (o OnlineDetails) Stale(now time.Time) bool {
 type savedOnline struct {
     Version  int                      `json:"version"`
     Editions map[string]OnlineDetails `json:"editions"`
+    Searched map[string]Searched      `json:"searched,omitempty"`
+}
+
+type Searched struct {
+    Query string `json:"query"`
+    At    int64  `json:"at"`
+}
+
+func (d *Data) Searched(book string) Searched {
+    return d.searched[book]
+}
+
+func (d *Data) SetSearched(book, query string) {
+    d.searched[book] = Searched{Query: query, At: time.Now().Unix()}
+    d.saveOnline()
 }
 
 func onlineKey(store, asin string) string {
@@ -60,7 +75,7 @@ func (d *Data) LinkOnline(book, storeCode string, edition online.Edition) {
 
     previous := d.edits[book]
     edit := previous
-    edit.ASIN, edit.Store = edition.ASIN, storeCode
+    edit.ASIN, edit.Store, edit.NoAudible = edition.ASIN, storeCode, false
     d.SetEdit(book, edit)
 
     if previous.ASIN != "" && onlineKey(previous.Store, previous.ASIN) != onlineKey(storeCode, edition.ASIN) {
@@ -83,7 +98,7 @@ func (d *Data) UnlinkOnline(book string) {
         return
     }
 
-    edit.ASIN, edit.Store = "", ""
+    edit.ASIN, edit.Store, edit.NoAudible = "", "", true
     d.SetEdit(book, edit)
     d.pruneOnline()
 }
@@ -100,6 +115,14 @@ func (d *Data) pruneOnline() {
     for key := range d.online {
         if !used[key] {
             delete(d.online, key)
+            changed = true
+        }
+    }
+
+    inLibrary := d.libraryPaths()
+    for book := range d.searched {
+        if !inLibrary[book] {
+            delete(d.searched, book)
             changed = true
         }
     }
@@ -122,6 +145,9 @@ func (d *Data) loadOnline() {
     if saved.Version == onlineVersion && saved.Editions != nil {
         d.online = saved.Editions
     }
+    if saved.Version == onlineVersion && saved.Searched != nil {
+        d.searched = saved.Searched
+    }
 
     d.pruneOnline()
 }
@@ -132,7 +158,7 @@ func (d *Data) saveOnline() {
         return
     }
 
-    if err := store.Save(file, savedOnline{Version: onlineVersion, Editions: d.online}); err != nil {
+    if err := store.Save(file, savedOnline{Version: onlineVersion, Editions: d.online, Searched: d.searched}); err != nil {
         fyne.LogError("Saving the Audible details failed", err)
     }
 }

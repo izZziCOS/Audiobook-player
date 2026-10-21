@@ -119,8 +119,23 @@ func (s *Settings) usesDarkColors() bool {
     }
 }
 
+func (s *Settings) titleBarLook() titlebar.Look {
+    dark := s.usesDarkColors()
+    variant := theme.VariantLight
+    if dark {
+        variant = theme.VariantDark
+    }
+
+    colors := themeFor(s.appearance)
+    return titlebar.Look{
+        Dark:       dark,
+        Background: colors.Color(theme.ColorNameBackground, variant),
+        Foreground: colors.Color(theme.ColorNameForeground, variant),
+    }
+}
+
 func (s *Settings) MatchTitleBar() {
-    if err := titlebar.SetDark(s.window, s.usesDarkColors()); err != nil {
+    if err := titlebar.Match(s.window, s.titleBarLook()); err != nil {
         fyne.LogError("Couldn't match the title bar to the app's appearance", err)
     }
 }

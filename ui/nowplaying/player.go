@@ -79,6 +79,13 @@ type Player struct {
     mediaStatus    publishedStatus
     seeking        atomic.Bool
     waiting        bool
+
+    generation         int
+    opening            bool
+    playAfterOpen      bool
+    prefetched         *openedAudio
+    prefetching        string
+    prefetchGeneration int
 }
 
 func New(window fyne.Window, prefs fyne.Preferences, data *userdata.Data, picker *kit.Picker, async func(func())) *Player {
@@ -184,9 +191,14 @@ func (p *Player) Tick(now time.Time) {
     p.refreshProgress()
     p.tickSleepTimer(now)
     p.showWaiting()
+    p.prefetchNextPart()
 }
 
 func (p *Player) showWaiting() {
+    if p.opening {
+        return
+    }
+
     waiting := p.audio != nil && p.playing && p.audio.Waiting()
     if waiting == p.waiting {
         return

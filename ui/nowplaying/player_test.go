@@ -93,3 +93,16 @@ func TestSinglePartProgressUsesTheFile(t *testing.T) {
         t.Errorf("title %q, want the file name", got)
     }
 }
+
+func TestRestartingTheOpenBook(t *testing.T) {
+    p := newTestPlayer(t)
+    folder, parts := testbooks.Book(t)
+    p.OpenFolder(folder)
+    p.MoveTo(parts[1], 0.25)
+
+    p.Restart(folder)
+
+    if p.book.Index != 0 || p.positionSeconds() != 0 || p.data.Positions[folder].Part != parts[0] {
+        t.Fatalf("the open book should go back to the start, got part %d at %v", p.book.Index+1, p.positionSeconds())
+    }
+}

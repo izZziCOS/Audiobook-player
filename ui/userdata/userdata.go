@@ -66,6 +66,7 @@ type Data struct {
     edits          map[string]BookEdit
     downloads      map[string]Download
     online         map[string]OnlineDetails
+    searched       map[string]Searched
     file           string
     dirty          bool
     saveErrorShown bool
@@ -222,6 +223,7 @@ func (d *Data) apply(data saved) {
     }
 
     d.online = map[string]OnlineDetails{}
+    d.searched = map[string]Searched{}
 
     d.downloads = data.Downloads
     if d.downloads == nil {
@@ -307,6 +309,11 @@ func (d *Data) Remember(book *library.Book, position float64) {
 
     d.LastBook = LastBook{Folder: book.Folder, File: book.Current()}
     d.MarkDirty()
+}
+
+func (d *Data) Restart(book, firstPart string) {
+    d.Positions[book] = Position{Part: firstPart, Listened: time.Now().Unix()}
+    d.Save()
 }
 
 func (d *Data) Finish(key string) {

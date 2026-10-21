@@ -26,8 +26,8 @@ const (
     preferenceLookups = "audibleLookups"
     preferenceStore   = "audibleStore"
     coverSide         = 120
-    privacyNote       = "When you look a book up, the title and author you search for are sent to Audible. " +
-        "Nothing is sent until you turn this on, and only when you search for a book or open the details of one you've matched."
+    privacyNote       = "When this is on, the title and author of each book in your library are sent to Audible to find it, " +
+        "one book every few seconds in the background. Nothing is sent while it's off."
 )
 
 type Book struct {
@@ -43,8 +43,10 @@ type About struct {
     prefs  fyne.Preferences
     data   *userdata.Data
     async  func(func())
-    client *online.Client
-    now    func() time.Time
+    client   *online.Client
+    now      func() time.Time
+    spacing  time.Duration
+    matching bool
 
     section     fyne.CanvasObject
     enabled     *widget.Check
@@ -57,8 +59,9 @@ func New(window fyne.Window, prefs fyne.Preferences, data *userdata.Data, async 
         prefs:  prefs,
         data:   data,
         async:  async,
-        client: online.NewClient(),
-        now:    time.Now,
+        client:  online.NewClient(),
+        now:     time.Now,
+        spacing: requestSpacing,
     }
     a.buildSection()
 
@@ -99,8 +102,8 @@ func (a *About) buildSection() {
 
     a.section = kit.Section(
         "Ratings and descriptions",
-        "Right-click a book and choose About this book to see its Audible rating, how many people rated it, "+
-            "its description and release date. "+privacyNote,
+        "Each book's Audible rating, how many people rated it, its description and release date are looked up automatically, "+
+            "using the first edition Audible finds. Right-click a book and choose About this book to see them or pick another edition. "+privacyNote,
         a.enabled,
         container.NewBorder(nil, nil, widget.NewLabel("Audible store"), nil, a.storeSelect),
     )

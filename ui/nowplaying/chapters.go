@@ -102,6 +102,17 @@ func (p *Player) next() {
     p.goToRelativePart(1)
 }
 
+func (p *Player) Restart(key string) {
+    if p.book == nil || p.audio == nil || p.book.Key() != key {
+        return
+    }
+
+    if p.playing {
+        p.TogglePlay()
+    }
+    p.MoveTo(p.book.Parts[0], 0)
+}
+
 func (p *Player) MoveTo(part string, seconds float64) bool {
     if p.book == nil || p.audio == nil {
         return false
@@ -113,7 +124,10 @@ func (p *Player) MoveTo(part string, seconds float64) bool {
     }
 
     if index != p.book.Index {
-        p.goToPart(index, p.playing)
+        p.goToPart(index, p.playing, func() {
+            p.seekInPart(seconds)
+        })
+        return true
     }
     p.seekInPart(seconds)
 

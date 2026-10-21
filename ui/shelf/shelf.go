@@ -31,6 +31,7 @@ type Shelf struct {
     EditDetails  func(path string, original details.Original)
     ShowAbout    func(path string, book about.Book)
     Offline      *offline.Store
+    OnRestart    func(path string)
 
     window fyne.Window
     prefs  fyne.Preferences
@@ -309,6 +310,18 @@ func (s *Shelf) editDetails(entry *shelfEntry) {
         original.Title = library.CleanName(filepath.Base(entry.path))
     }
     s.EditDetails(entry.path, original)
+}
+
+func (s *Shelf) AudibleCandidates() []about.Candidate {
+    var candidates []about.Candidate
+    for _, entry := range s.entries {
+        if entry.book == nil || entry.missing {
+            continue
+        }
+        candidates = append(candidates, about.Candidate{Path: entry.path, Title: entry.title, Author: entry.author})
+    }
+
+    return candidates
 }
 
 func (s *Shelf) showAbout(entry *shelfEntry) {

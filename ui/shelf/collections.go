@@ -15,6 +15,7 @@ import (
     "fyne.io/fyne/v2/theme"
     "fyne.io/fyne/v2/widget"
 
+    "github.com/izzzicos/audiobook-player/audio"
     "github.com/izzzicos/audiobook-player/library"
     "github.com/izzzicos/audiobook-player/ui/kit"
     "github.com/izzzicos/audiobook-player/ui/offline"
@@ -159,6 +160,11 @@ func (s *Shelf) cardMenu(entry *shelfEntry) *fyne.Menu {
         collections,
     }
     items = append(items, s.downloadItems(entry)...)
+    if s.readingState(entry) != stateNotStarted {
+        items = append(items, fyne.NewMenuItem("Reset progress…", func() {
+            s.confirmRestart(entry)
+        }))
+    }
     if current := s.collection; current != "" {
         items = append(items, fyne.NewMenuItem(fmt.Sprintf("Remove from “%s”", current), func() {
             s.data.SetInCollection(current, entry.path, false)
@@ -296,6 +302,45 @@ func (s *Shelf) confirmRemove(entry *shelfEntry, removed func()) {
     confirm.SetDismissText("Cancel")
     confirm.SetConfirmImportance(widget.DangerImportance)
     confirm.Show()
+}
+
+func (s *Shelf) confirmRestart(entry *shelfEntry) {
+    confirm := dialog.NewConfirm(
+        fmt.Sprintf("Start “%s” from the beginning?", shortened(entry.title, removeTitleLength)),
+        "Your place in the book and its finished mark are cleared, on your other computers too if you sync. Your listening statistics are kept.",
+        func(confirmed bool) {
+            if confirmed {
+                s.restart(entry)
+            }
+        },
+        s.window,
+    )
+    confirm.SetConfirmText("Reset progress")
+    confirm.SetDismissText("Cancel")
+    confirm.SetConfirmImportance(widget.DangerImportance)
+    confirm.Show()
+}
+
+func (s *Shelf) restart(entry *shelfEntry) {
+    first := ""
+    switch {
+    case entry.book != nil:
+        first = entry.book.Parts[0]
+    case audio.IsSupported(entry.path):
+        first = entry.path
+    }
+
+    if first == "" {
+        delete(s.data.Positions, entry.path)
+        s.data.Save()
+    } else {
+        s.data.Restart(entry.path, first)
+    }
+
+    if s.OnRestart != nil {
+        s.OnRestart(entry.path)
+    }
+    s.Refresh()
 }
 
 func emptyCollectionText(name string) string {
