@@ -197,6 +197,9 @@ func TestEmptyStatistics(t *testing.T) {
 	if v.content.Visible() || !v.empty.Visible() {
 		t.Fatal("with no listening the empty message should be shown")
 	}
+	if v.tiles.Visible() {
+		t.Fatal("a row of zeros says nothing, so the tiles should wait for some listening")
+	}
 	if v.total.value.Text != "0m" || v.speed.value.Text != "–" {
 		t.Fatalf("empty tiles %q %q", v.total.value.Text, v.speed.value.Text)
 	}

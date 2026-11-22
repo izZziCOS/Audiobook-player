@@ -48,6 +48,18 @@ func ShowMenuAbove(window fyne.Window, anchor fyne.CanvasObject, menu *fyne.Menu
 	position := fyne.CurrentApp().Driver().AbsolutePositionForObject(anchor)
 	size := popUp.MinSize()
 
+	// A menu that doesn't fit above opens below if there's more room there, so
+	// it doesn't cover the button it came from. Fyne scrolls it if it's still
+	// taller than the space it gets.
+	below := window.Canvas().Size().Height - position.Y - anchor.Size().Height
+	if position.Y < size.Height && below > position.Y {
+		popUp.ShowAtPosition(fyne.NewPos(
+			max(position.X+anchor.Size().Width-size.Width, 0),
+			position.Y+anchor.Size().Height,
+		))
+		return
+	}
+
 	popUp.ShowAtPosition(fyne.NewPos(
 		max(position.X+anchor.Size().Width-size.Width, 0),
 		max(position.Y-size.Height, 0),

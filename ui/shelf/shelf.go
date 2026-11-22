@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 
@@ -51,6 +52,10 @@ type Shelf struct {
 	sortButton       *widget.Button
 	collectionButton *widget.Button
 	duplicatesButton *widget.Button
+	addButtons       []*widget.Button
+	body             *fyne.Container
+	scroll           *container.Scroll
+	scans            int
 
 	entries        []*shelfEntry
 	rechecking     atomic.Bool
@@ -233,13 +238,24 @@ func (s *Shelf) open(entry *shelfEntry) {
 		return
 	}
 
+	// Checking that a book on a drive or server can be reached can take a few
+	// seconds, so the card says so, and further clicks wait for the answer.
+	if entry.opening {
+		return
+	}
+	entry.opening = true
+	entry.card.Status = openingStatus
+	entry.card.Refresh()
+
 	s.async(func() {
 		err := reachable(path, library.ResponseTimeout)
 		unavailable := errors.Is(err, library.ErrNotResponding) || err != nil && library.Unavailable(path)
 
 		fyne.Do(func() {
+			entry.opening = false
 			if !errors.Is(err, library.ErrNotResponding) {
 				if err = s.Open(path); err == nil {
+					s.updateCard(entry)
 					return
 				}
 			}
@@ -247,9 +263,31 @@ func (s *Shelf) open(entry *shelfEntry) {
 			entry.missing = true
 			entry.unavailable = unavailable
 			s.updateCard(entry)
-			dialog.ShowError(openError(entry.title, err, unavailable), s.window)
+			s.showOpenError(entry, err, unavailable)
 		})
 	})
+}
+
+const openingStatus = "Opening…"
+
+// showOpenError explains why a book couldn't be opened. When its drive or
+// server isn't there, it offers to try again once it's been connected.
+func (s *Shelf) showOpenError(entry *shelfEntry, err error, unavailable bool) {
+	message := openError(entry.title, err, unavailable)
+	if !unavailable {
+		dialog.ShowError(message, s.window)
+		return
+	}
+
+	text := widget.NewLabel(message.Error())
+	text.Wrapping = fyne.TextWrapWord
+	retry := dialog.NewCustomConfirm("Can't open this book", "Try again", "Close", text, func(again bool) {
+		if again {
+			s.open(entry)
+		}
+	}, s.window)
+	retry.Resize(fyne.NewSize(min(s.window.Canvas().Size().Width-40, 420), retry.MinSize().Height))
+	retry.Show()
 }
 
 func openError(title string, err error, unavailable bool) error {

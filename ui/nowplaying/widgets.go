@@ -21,6 +21,7 @@ type roundButton struct {
 	diameter float32
 	onTapped func()
 	hovered  bool
+	busy     bool
 }
 
 func newRoundButton(
@@ -44,6 +45,16 @@ func newRoundButton(
 
 func (b *roundButton) SetIcon(icon fyne.Resource) {
 	b.icon = icon
+	b.Refresh()
+}
+
+// SetBusy swaps the icon for a spinner, to show that something is loading.
+func (b *roundButton) SetBusy(busy bool) {
+	if b.busy == busy {
+		return
+	}
+
+	b.busy = busy
 	b.Refresh()
 }
 
@@ -79,7 +90,9 @@ func (b *roundButton) CreateRenderer() fyne.WidgetRenderer {
 		background: canvas.NewCircle(color.Transparent),
 		image:      canvas.NewImageFromResource(nil),
 		text:       text,
+		activity:   widget.NewActivity(),
 	}
+	renderer.activity.Hide()
 	renderer.image.FillMode = canvas.ImageFillContain
 	renderer.Refresh()
 
@@ -91,6 +104,7 @@ type roundButtonRenderer struct {
 	background *canvas.Circle
 	image      *canvas.Image
 	text       *canvas.Text
+	activity   *widget.Activity
 }
 
 func (r *roundButtonRenderer) Layout(size fyne.Size) {
@@ -107,6 +121,8 @@ func (r *roundButtonRenderer) Layout(size fyne.Size) {
 	iconOrigin := origin.AddXY((side-iconSide)/2, (side-iconSide)/2)
 	r.image.Resize(fyne.NewSquareSize(iconSide))
 	r.image.Move(iconOrigin)
+	r.activity.Resize(fyne.NewSquareSize(iconSide))
+	r.activity.Move(iconOrigin)
 
 	r.text.TextSize = iconSide * 0.27
 	textSize := r.text.MinSize()
@@ -145,6 +161,18 @@ func (r *roundButtonRenderer) Refresh() {
 	r.text.Text = r.button.label
 	r.text.Color = th.Color(theme.ColorNameForeground, variant)
 
+	if r.button.busy {
+		r.image.Hide()
+		r.text.Hide()
+		r.activity.Show()
+		r.activity.Start()
+	} else {
+		r.activity.Stop()
+		r.activity.Hide()
+		r.image.Show()
+		r.text.Show()
+	}
+
 	r.Layout(r.button.Size())
 	r.background.Refresh()
 	r.image.Refresh()
@@ -152,10 +180,12 @@ func (r *roundButtonRenderer) Refresh() {
 }
 
 func (r *roundButtonRenderer) Objects() []fyne.CanvasObject {
-	return []fyne.CanvasObject{r.background, r.image, r.text}
+	return []fyne.CanvasObject{r.background, r.image, r.text, r.activity}
 }
 
-func (r *roundButtonRenderer) Destroy() {}
+func (r *roundButtonRenderer) Destroy() {
+	r.activity.Stop()
+}
 
 type squareLayout struct{}
 

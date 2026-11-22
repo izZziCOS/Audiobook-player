@@ -38,6 +38,7 @@ type shelfEntry struct {
 	outOfDate   bool
 	fingerprint *library.Fingerprint
 	card        *bookCard
+	opening     bool
 }
 
 type shelfInfo struct {
@@ -88,12 +89,6 @@ func (s *Shelf) build() fyne.CanvasObject {
 	s.duplicatesButton.Importance = widget.WarningImportance
 	s.duplicatesButton.Hide()
 
-	hint := widget.NewLabel("Click a book to play it · Right-click for more")
-	hint.SizeName = theme.SizeNameCaptionText
-	hint.Importance = widget.LowImportance
-	hint.Alignment = fyne.TextAlignTrailing
-	hint.Truncation = fyne.TextTruncateEllipsis
-
 	template := newBookCard(nil, nil)
 	s.grid = container.New(newShelfLayout(template.MinSize()))
 
@@ -107,6 +102,7 @@ func (s *Shelf) build() fyne.CanvasObject {
 	emptyHint.Importance = widget.LowImportance
 	emptyButton := widget.NewButtonWithIcon("Add books", theme.ContentAddIcon(), s.chooseFolders)
 	emptyButton.Importance = widget.HighImportance
+	s.addButtons = []*widget.Button{addButton, emptyButton}
 	s.empty = container.NewVBox(
 		layout.NewSpacer(),
 		container.NewCenter(canvas.NewImageFromResource(
@@ -126,26 +122,83 @@ func (s *Shelf) build() fyne.CanvasObject {
 
 	filters, sorting := s.buildShelfControls()
 
-	s.header = container.NewVBox(
-		container.NewBorder(nil, nil, s.buildCollectionButton(), addButton, s.search),
+	// The filters, book count and sort share a row when the window is wide
+	// enough, and take two rows when it isn't.
+	controls := kit.NewAdaptiveRow(
+		func() {
+			if s.body != nil {
+				s.body.Refresh()
+			}
+		},
 		filters,
-		container.NewBorder(nil, nil, container.NewHBox(s.count, s.duplicatesButton), sorting, hint),
+		container.NewBorder(nil, nil, container.NewHBox(s.count, s.duplicatesButton), sorting),
 	)
 
-	return container.New(
-		layout.NewCustomPaddedLayout(4, 0, 4, 4),
-		container.NewBorder(
-			s.header,
-			nil,
-			nil,
-			nil,
-			container.NewStack(
-				container.NewVScroll(container.New(layout.NewCustomPaddedLayout(8, 16, 0, 0), s.grid)),
-				s.empty,
-				s.noMatches,
-			),
+	s.header = container.NewVBox(
+		container.NewBorder(nil, nil, s.buildCollectionButton(), addButton, s.search),
+		controls,
+	)
+
+	s.scroll = container.NewVScroll(container.New(layout.NewCustomPaddedLayout(gridTopPadding, 16, 0, 0), s.grid))
+	s.body = container.NewBorder(
+		s.header,
+		nil,
+		nil,
+		nil,
+		container.NewStack(
+			s.scroll,
+			s.empty,
+			s.noMatches,
 		),
 	)
+
+	return container.New(layout.NewCustomPaddedLayout(4, 0, 4, 4), s.body)
+}
+
+const gridTopPadding = 8
+
+// scrollToCard scrolls the shelf so a card that took the keyboard focus is
+// fully visible.
+func (s *Shelf) scrollToCard(card *bookCard) {
+	if s.scroll == nil {
+		return
+	}
+
+	top := card.Position().Y + gridTopPadding
+	bottom := top + card.Size().Height
+	offset := s.scroll.Offset.Y
+	visible := s.scroll.Size().Height
+
+	switch {
+	case top < offset:
+		offset = top
+	case bottom > offset+visible:
+		offset = bottom - visible
+	default:
+		return
+	}
+
+	s.scroll.ScrollToOffset(fyne.NewPos(0, max(offset, 0)))
+}
+
+// setScanning shows that Add books is looking through folders, which can take
+// a while on a large library or a network drive.
+func (s *Shelf) setScanning(scanning bool) {
+	if scanning {
+		s.scans++
+	} else {
+		s.scans = max(s.scans-1, 0)
+	}
+
+	for _, button := range s.addButtons {
+		if s.scans > 0 {
+			button.SetText("Adding books…")
+			button.Disable()
+		} else {
+			button.SetText("Add books")
+			button.Enable()
+		}
+	}
 }
 
 func (s *Shelf) newShelfEntry(path string) *shelfEntry {
@@ -165,6 +218,9 @@ func (s *Shelf) newShelfEntry(path string) *shelfEntry {
 		},
 	)
 	entry.card.Title = entry.title
+	entry.card.OnFocused = func() {
+		s.scrollToCard(entry.card)
+	}
 
 	return entry
 }
@@ -530,6 +586,7 @@ func (s *Shelf) applyShelfDurations(
 
 func (s *Shelf) AddFrom(roots []string) {
 	collection := s.collection
+	s.setScanning(true)
 
 	s.async(func() {
 		var found []string
@@ -552,12 +609,14 @@ func (s *Shelf) AddFrom(roots []string) {
 				if err == nil {
 					err = fmt.Errorf("no audiobooks were found in the selected folders")
 				}
+				s.setScanning(false)
 				dialog.ShowError(err, s.window)
 				return
 			}
 
 			s.data.Unignore(cleanPaths(found))
 			s.importBooks(found, false, func(result ImportResult) {
+				s.setScanning(false)
 				var inLibrary []string
 				for _, path := range found {
 					if book := result.InLibrary(path); book != "" {

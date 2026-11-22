@@ -109,28 +109,51 @@ func (p *Player) buildNowPlaying() fyne.CanvasObject {
 		container.NewBorder(nil, nil, p.current, p.remaining),
 	)
 
+	// Volume gets a modest fixed width: the system volume and media keys do
+	// most of that job, so it shouldn't be the widest control on the screen.
+	volume := container.NewHBox(
+		widget.NewIcon(theme.VolumeDownIcon()),
+		container.New(layout.NewGridWrapLayout(fyne.NewSize(volumeWidth, p.volume.MinSize().Height)), p.volume),
+		widget.NewIcon(theme.VolumeUpIcon()),
+	)
+
 	controls := container.NewBorder(
 		nil,
 		nil,
-		nil,
+		volume,
 		container.NewHBox(p.speedButton, p.buildSleepButton()),
-		container.NewBorder(
-			nil,
-			nil,
-			widget.NewIcon(theme.VolumeDownIcon()),
-			widget.NewIcon(theme.VolumeUpIcon()),
-			p.volume,
-		),
 	)
 
-	return container.NewVBox(
-		p.title,
-		p.subtitle,
-		layout.NewSpacer(),
+	p.controls = container.NewVBox(
 		progress,
 		p.buildTransport(),
 		controls,
 	)
+	p.emptyActions = p.buildEmptyActions()
+
+	return container.NewVBox(
+		p.title,
+		p.author,
+		p.subtitle,
+		layout.NewSpacer(),
+		p.controls,
+		p.emptyActions,
+	)
+}
+
+const volumeWidth = 140
+
+func (p *Player) buildEmptyActions() fyne.CanvasObject {
+	library := widget.NewButtonWithIcon("Go to Library", theme.GridIcon(), func() {
+		if p.ShowLibrary != nil {
+			p.ShowLibrary()
+		}
+	})
+	library.Importance = widget.HighImportance
+
+	open := widget.NewButtonWithIcon("Open file…", theme.FileAudioIcon(), p.chooseFile)
+
+	return container.NewCenter(container.NewHBox(library, open))
 }
 
 func (p *Player) buildTransport() fyne.CanvasObject {

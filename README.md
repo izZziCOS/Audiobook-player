@@ -58,7 +58,7 @@ The **Library** tab shows every book you've added as a card with its cover, titl
 - You can also drop folders or files onto the Library tab.
 - Any book you open with **Open file** or **Open folder** is added automatically. Opening one part of a book that's already in your library opens that book at that part.
 - Each book is only added once, however you reach it. See [Duplicates](#duplicates).
-- Click a book to carry on from where you stopped. Right-click a book to edit its details or to remove it from the library; neither touches the files. **Remove from library…** asks first, so a stray click can't take a book away.
+- Click a book to carry on from where you stopped. Right-click a book, or click the **⋯** button on its card, to edit its details or to remove it from the library; neither touches the files. That menu has everything below that says *right-click*. With the keyboard, Tab moves between books and Return opens one. **Remove from library…** asks first, so a stray click can't take a book away.
 - **Reset progress…**, in the same menu for a book you've started, puts it back at the beginning and clears its finished mark, after asking. If you sync between computers, the others start it from the beginning too. Your listening statistics are kept.
 - Type in the search box (or press ⌘F on a Mac, Ctrl+F elsewhere) to find a book by its title, author, or file or folder name. Upper and lower case and accents don't matter, so `bronte` finds *Brontë*, and every word you type has to match.
 - **All**, **In progress**, **Not started** and **Finished** above the books show only the books in that state. They work together with the search box, so **Finished** plus `tolkien` shows the Tolkien books you've finished.

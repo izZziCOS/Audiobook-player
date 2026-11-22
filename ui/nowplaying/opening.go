@@ -91,7 +91,7 @@ func (p *Player) install(key string, opened *openedAudio) {
 
 func (p *Player) Close() {
 	p.generation++
-	p.opening = false
+	p.setOpening(false)
 	p.forgetPrefetched()
 
 	if p.audio != nil {
@@ -110,7 +110,7 @@ func (p *Player) load(key, path string, done func(ok bool)) {
 	generation := p.generation
 
 	if prefetched := p.takePrefetched(path); prefetched != nil {
-		p.opening = false
+		p.setOpening(false)
 		p.install(key, prefetched)
 		done(true)
 		return
@@ -120,7 +120,7 @@ func (p *Player) load(key, path string, done func(ok bool)) {
 		p.audio.Pause()
 		p.setPlaying(false)
 	}
-	p.opening = true
+	p.setOpening(true)
 	p.setSubtitle(openingText)
 	p.showPlayButton(p.playAfterOpen)
 
@@ -133,7 +133,7 @@ func (p *Player) load(key, path string, done func(ok bool)) {
 				return
 			}
 
-			p.opening = false
+			p.setOpening(false)
 			if err != nil {
 				p.playAfterOpen = false
 				if p.book != nil {

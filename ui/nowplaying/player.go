@@ -36,6 +36,7 @@ type Player struct {
 	ShowAbout      func(key string, book about.Book)
 	OnPaused       func()
 	OnSpeedChanged func(key string)
+	ShowLibrary    func()
 	Offline        *offline.Store
 
 	window fyne.Window
@@ -46,7 +47,10 @@ type Player struct {
 
 	content          fyne.CanvasObject
 	title            *widget.RichText
+	author           *widget.RichText
 	subtitle         *widget.RichText
+	controls         fyne.CanvasObject
+	emptyActions     fyne.CanvasObject
 	progress         *widget.Slider
 	current          *widget.RichText
 	remaining        *widget.RichText
@@ -119,6 +123,11 @@ func (p *Player) build() {
 	p.subtitle = newRichText("", subtitleStyle)
 	p.subtitle.Hide()
 
+	authorStyle := widget.RichTextStyleInline
+	authorStyle.Alignment = fyne.TextAlignCenter
+	p.author = newRichText("", authorStyle)
+	p.author.Hide()
+
 	p.current = newRichText(kit.FormatTime(0), newCaptionStyle(fyne.TextAlignLeading))
 	p.current.Truncation = fyne.TextTruncateOff
 	p.remaining = newRichText("−"+kit.FormatTime(0), newCaptionStyle(fyne.TextAlignTrailing))
@@ -156,6 +165,25 @@ func (p *Player) build() {
 			container.New(layout.NewCustomPaddedLayout(8, 20, 24, 24), p.buildCover()),
 		),
 	)
+	p.showEmptyState()
+}
+
+// showEmptyState swaps the player's controls, which can't do anything yet,
+// for ways to find a book, until the first book starts opening.
+func (p *Player) showEmptyState() {
+	if p.book == nil && !p.opening {
+		p.controls.Hide()
+		p.emptyActions.Show()
+	} else {
+		p.emptyActions.Hide()
+		p.controls.Show()
+	}
+}
+
+func (p *Player) setOpening(opening bool) {
+	p.opening = opening
+	p.playButton.SetBusy(opening)
+	p.showEmptyState()
 }
 
 func (p *Player) Content() fyne.CanvasObject {

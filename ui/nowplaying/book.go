@@ -240,6 +240,8 @@ func (p *Player) rewindBook() {
 
 func (p *Player) updateBookInfo() {
 	setRichText(p.title, p.book.Title(p.metadata))
+	p.showAuthor()
+	p.showEmptyState()
 	p.chapterIndex = p.currentChapter()
 	p.setSubtitle(p.subtitleText())
 
@@ -276,6 +278,15 @@ func (p *Player) setSubtitle(text string) {
 	kit.RefreshContent(p.window)
 }
 
+func (p *Player) showAuthor() {
+	setRichText(p.author, p.metadata.Artist)
+	if p.metadata.Artist == "" {
+		p.author.Hide()
+	} else {
+		p.author.Show()
+	}
+}
+
 func (p *Player) applyEdit(key string) {
 	edit := p.data.Edit(key)
 	p.metadata = p.tags.Override(edit.Title, edit.Author)
@@ -297,6 +308,7 @@ func (p *Player) RefreshDetails(key string) {
 	p.applyEdit(key)
 	p.selectSpeed(p.bookSpeed(key))
 	setRichText(p.title, p.book.Title(p.metadata))
+	p.showAuthor()
 	p.setSubtitle(p.subtitleText())
 	p.publishTrack()
 }

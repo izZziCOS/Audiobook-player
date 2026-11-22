@@ -34,6 +34,8 @@ type statTile struct {
 }
 
 type View struct {
+	ShowLibrary func()
+
 	data     *userdata.Data
 	title    func(key string) (string, bool)
 	lastTick time.Time
@@ -42,6 +44,7 @@ type View struct {
 
 	content fyne.CanvasObject
 	empty   fyne.CanvasObject
+	tiles   fyne.CanvasObject
 	scroll  *container.Scroll
 
 	daily, weekly          *columnChart
@@ -149,7 +152,7 @@ func New(data *userdata.Data, title func(key string) (string, bool)) *View {
 	speedTile, speed := newStatTile("Average speed")
 	v.total, v.week, v.average, v.finished, v.streak, v.speed = total, week, average, finished, streak, speed
 
-	tiles := container.NewGridWithColumns(3, totalTile, weekTile, averageTile, finishedTile, streakTile, speedTile)
+	v.tiles = container.NewGridWithColumns(3, totalTile, weekTile, averageTile, finishedTile, streakTile, speedTile)
 
 	v.daily = newColumnChart()
 	v.weekly = newColumnChart()
@@ -182,11 +185,17 @@ func New(data *userdata.Data, title func(key string) (string, bool)) *View {
 	emptyText.Alignment = fyne.TextAlignCenter
 	emptyText.Wrapping = fyne.TextWrapWord
 	emptyText.Importance = widget.LowImportance
-	v.empty = container.NewVBox(kit.Gap(), kit.Gap(), emptyText)
+	libraryButton := widget.NewButtonWithIcon("Go to Library", theme.GridIcon(), func() {
+		if v.ShowLibrary != nil {
+			v.ShowLibrary()
+		}
+	})
+	libraryButton.Importance = widget.HighImportance
+	v.empty = container.NewVBox(kit.Gap(), kit.Gap(), emptyText, container.NewCenter(libraryButton))
 
 	v.scroll = container.NewVScroll(container.New(
 		layout.NewCustomPaddedLayout(12, 24, 16, 16),
-		container.NewVBox(tiles, v.empty, v.content),
+		container.NewVBox(v.tiles, v.empty, v.content),
 	))
 
 	return v
@@ -260,10 +269,12 @@ func (v *View) Refresh() {
 
 	if log.Total() == 0 {
 		v.empty.Show()
+		v.tiles.Hide()
 		v.content.Hide()
 		return
 	}
 	v.empty.Hide()
+	v.tiles.Show()
 	v.content.Show()
 
 	daily := log.Daily(now, statsDays)

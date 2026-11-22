@@ -28,8 +28,10 @@ type bookCard struct {
 	Thumbnail image.Image
 	OnTapped  func()
 	Menu      func() *fyne.Menu
+	OnFocused func()
 
 	hovered bool
+	focused bool
 }
 
 func newBookCard(onTapped func(), menu func() *fyne.Menu) *bookCard {
@@ -46,15 +48,42 @@ func (c *bookCard) Tapped(*fyne.PointEvent) {
 }
 
 func (c *bookCard) TappedSecondary(event *fyne.PointEvent) {
+	c.showMenuAt(event.AbsolutePosition)
+}
+
+func (c *bookCard) showMenuAt(position fyne.Position) {
 	if c.Menu == nil {
 		return
 	}
 
-	widget.ShowPopUpMenuAtPosition(
-		c.Menu(),
-		fyne.CurrentApp().Driver().CanvasForObject(c),
-		event.AbsolutePosition,
-	)
+	canvas := fyne.CurrentApp().Driver().CanvasForObject(c)
+	if canvas == nil {
+		return
+	}
+
+	widget.ShowPopUpMenuAtPosition(c.Menu(), canvas, position)
+}
+
+func (c *bookCard) FocusGained() {
+	c.focused = true
+	c.Refresh()
+	if c.OnFocused != nil {
+		c.OnFocused()
+	}
+}
+
+func (c *bookCard) FocusLost() {
+	c.focused = false
+	c.Refresh()
+}
+
+func (c *bookCard) TypedRune(rune) {}
+
+func (c *bookCard) TypedKey(event *fyne.KeyEvent) {
+	switch event.Name {
+	case fyne.KeyReturn, fyne.KeyEnter, fyne.KeySpace:
+		c.Tapped(nil)
+	}
 }
 
 func (c *bookCard) Cursor() desktop.Cursor {
@@ -76,6 +105,7 @@ func (c *bookCard) MouseOut() {
 func (c *bookCard) CreateRenderer() fyne.WidgetRenderer {
 	title := widget.NewLabel("")
 	title.TextStyle = fyne.TextStyle{Bold: true}
+	title.Wrapping = fyne.TextWrapWord
 	title.Truncation = fyne.TextTruncateEllipsis
 
 	author := widget.NewLabel("")
@@ -100,6 +130,14 @@ func (c *bookCard) CreateRenderer() fyne.WidgetRenderer {
 
 	background := canvas.NewRectangle(color.Transparent)
 	background.CornerRadius = 12
+	background.StrokeWidth = 2
+
+	var more *widget.Button
+	more = widget.NewButtonWithIcon("", theme.MoreHorizontalIcon(), func() {
+		position := fyne.CurrentApp().Driver().AbsolutePositionForObject(more)
+		c.showMenuAt(position.AddXY(0, more.Size().Height))
+	})
+	more.Importance = widget.LowImportance
 
 	renderer := &bookCardRenderer{
 		card:                  c,
@@ -113,6 +151,7 @@ func (c *bookCard) CreateRenderer() fyne.WidgetRenderer {
 		author: author,
 		status: status,
 		rating: rating,
+		more:   more,
 		track:  canvas.NewRectangle(color.Transparent),
 		fill:   canvas.NewRectangle(color.Transparent),
 	}
@@ -133,6 +172,7 @@ type bookCardRenderer struct {
 	author                *widget.Label
 	status                *widget.Label
 	rating                *widget.Label
+	more                  *widget.Button
 	track                 *canvas.Rectangle
 	fill                  *canvas.Rectangle
 }
@@ -142,6 +182,8 @@ func (r *bookCardRenderer) Layout(size fyne.Size) {
 	innerPadding := theme.InnerPadding()
 	side := size.Width - 2*padding
 	coverOrigin := fyne.NewPos(padding, padding)
+	labelX := padding - innerPadding/2
+	labelWidth := size.Width - 2*padding + innerPadding
 
 	r.background.Resize(size)
 
@@ -154,15 +196,22 @@ func (r *bookCardRenderer) Layout(size fyne.Size) {
 	r.cover.Move(coverOrigin)
 	r.cover.Resize(fyne.NewSquareSize(side))
 
+	// The title takes one or two lines, and the author follows it. The
+	// progress bar and status sit at the bottom, so they line up across a row.
 	y := padding + side
-	for _, label := range []*widget.Label{r.title, r.author} {
-		height := label.MinSize().Height
-		label.Move(fyne.NewPos(padding-innerPadding/2, y))
-		label.Resize(fyne.NewSize(size.Width-2*padding+innerPadding, height))
-		y += height - innerPadding/2
+	titleHeight := r.titleLineHeight()
+	if r.titleWraps(labelWidth) {
+		titleHeight = twoLineHeight(titleHeight)
 	}
+	r.title.Move(fyne.NewPos(labelX, y))
+	r.title.Resize(fyne.NewSize(labelWidth, titleHeight))
+	y += titleHeight - innerPadding/2
 
-	y += cardProgressGap
+	r.author.Move(fyne.NewPos(labelX, y))
+	r.author.Resize(fyne.NewSize(labelWidth, r.author.MinSize().Height))
+
+	rowHeight := r.status.MinSize().Height
+	y = size.Height - padding - rowHeight - cardProgressThick
 	barWidth := side - innerPadding
 	r.track.Move(fyne.NewPos(padding+innerPadding/2, y))
 	r.track.Resize(fyne.NewSize(barWidth, cardProgressThick))
@@ -170,16 +219,39 @@ func (r *bookCardRenderer) Layout(size fyne.Size) {
 	r.fill.Resize(fyne.NewSize(barWidth*float32(min(max(r.card.Progress, 0), 1)), cardProgressThick))
 	y += cardProgressThick
 
-	rowWidth := size.Width - 2*padding + innerPadding
+	moreWidth := float32(0)
+	if r.more.Visible() {
+		moreWidth = rowHeight
+		r.more.Move(fyne.NewPos(size.Width-padding-moreWidth, y))
+		r.more.Resize(fyne.NewSquareSize(moreWidth))
+	}
+
+	rowWidth := labelWidth - moreWidth
 	ratingWidth := float32(0)
 	if r.card.Rating != "" {
 		ratingWidth = min(r.rating.MinSize().Width, rowWidth/2)
 	}
-	rowHeight := r.status.MinSize().Height
-	r.status.Move(fyne.NewPos(padding-innerPadding/2, y))
+	r.status.Move(fyne.NewPos(labelX, y))
 	r.status.Resize(fyne.NewSize(rowWidth-ratingWidth, rowHeight))
-	r.rating.Move(fyne.NewPos(padding-innerPadding/2+rowWidth-ratingWidth, y))
+	r.rating.Move(fyne.NewPos(labelX+rowWidth-ratingWidth, y))
 	r.rating.Resize(fyne.NewSize(ratingWidth, rowHeight))
+}
+
+// titleWraps reports whether the title needs a second line at this width.
+func (r *bookCardRenderer) titleWraps(labelWidth float32) bool {
+	textWidth := fyne.MeasureText(r.card.Title, theme.TextSize(), r.title.TextStyle).Width
+	return textWidth > labelWidth-2*theme.InnerPadding()
+}
+
+// titleLineHeight is the height of a one-line title, worked out from the font
+// because a wrapping label's own MinSize depends on how it was last laid out.
+func (r *bookCardRenderer) titleLineHeight() float32 {
+	return fyne.MeasureText("M", theme.TextSize(), r.title.TextStyle).Height + 2*theme.InnerPadding()
+}
+
+func twoLineHeight(oneLine float32) float32 {
+	lineHeight := oneLine - 2*theme.InnerPadding()
+	return oneLine + lineHeight + theme.LineSpacing()
 }
 
 func (r *bookCardRenderer) MinSize() fyne.Size {
@@ -188,7 +260,7 @@ func (r *bookCardRenderer) MinSize() fyne.Size {
 	side := float32(cardWidth) - 2*padding
 
 	height := padding + side +
-		r.title.MinSize().Height - innerPadding/2 +
+		twoLineHeight(r.titleLineHeight()) - innerPadding/2 +
 		r.author.MinSize().Height - innerPadding/2 +
 		cardProgressGap + cardProgressThick +
 		r.status.MinSize().Height + padding
@@ -203,6 +275,10 @@ func (r *bookCardRenderer) Refresh() {
 	r.background.FillColor = color.Transparent
 	if r.card.hovered {
 		r.background.FillColor = th.Color(theme.ColorNameHover, variant)
+	}
+	r.background.StrokeColor = color.Transparent
+	if r.card.focused {
+		r.background.StrokeColor = th.Color(theme.ColorNameFocus, variant)
 	}
 	r.placeholderBackground.FillColor = th.Color(theme.ColorNameInputBackground, variant)
 	r.track.FillColor = th.Color(theme.ColorNameInputBackground, variant)
@@ -228,6 +304,11 @@ func (r *bookCardRenderer) Refresh() {
 	} else {
 		r.rating.Show()
 	}
+	if r.card.Menu == nil {
+		r.more.Hide()
+	} else {
+		r.more.Show()
+	}
 
 	r.Layout(r.card.Size())
 	for _, object := range []fyne.CanvasObject{r.background, r.placeholderBackground, r.placeholderIcon, r.cover, r.track, r.fill} {
@@ -247,6 +328,7 @@ func (r *bookCardRenderer) Objects() []fyne.CanvasObject {
 		r.fill,
 		r.status,
 		r.rating,
+		r.more,
 	}
 }
 

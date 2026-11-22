@@ -188,6 +188,8 @@ func (ui *UI) build() {
 		}
 	}
 	ui.player.OnPaused = ui.syncer.Write
+	ui.player.ShowLibrary = ui.showLibrary
+	ui.statistics.ShowLibrary = ui.showLibrary
 
 	ui.player.FolderBookOf = ui.shelf.FolderBookOf
 	ui.player.EditDetails = ui.editor.Show
